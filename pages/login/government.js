@@ -86,17 +86,6 @@ export default function GovLoginPage() {
               </button>
             </form>
 
-            <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 space-y-1">
-              <p className="font-semibold text-gray-600 mb-1.5">State Admin Accounts:</p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
-                <span>🐯 <code>wb_admin</code> / <code>WB@2024</code></span>
-                <span>🕌 <code>up_admin</code> / <code>UP@2024</code></span>
-                <span>🌆 <code>mh_admin</code> / <code>MH@2024</code></span>
-                <span>🏯 <code>ka_admin</code> / <code>KA@2024</code></span>
-                <span>🏛️ <code>dl_admin</code> / <code>DL@2024</code></span>
-                <span>🕌 <code>tn_admin</code> / <code>TN@2024</code></span>
-              </div>
-            </div>
           </div>
         </div>
 
