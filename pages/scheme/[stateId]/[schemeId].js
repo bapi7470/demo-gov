@@ -1,11 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
-import { centralSchemes, stateSchemes } from '../../../data/schemes';
-import { centralScholarships, stateScholarships } from '../../../data/scholarships';
-import { centralTenders, stateTenders } from '../../../data/tenders';
-import { states, unionTerritories } from '../../../data/states';
+import prisma from '../../../lib/prisma';
 import SchemeForm from '../../../components/SchemeForm';
+
+export async function getServerSideProps({ params }) {
+  const { stateId, schemeId } = params;
+
+  // Look up in all relevant models by id
+  let scheme = null;
+  const [officialScheme, customScheme, officialSchol, officialTender, customSchol, customTender] = await Promise.all([
+    prisma.scheme.findUnique({ where: { id: schemeId } }),
+    prisma.customScheme.findUnique({ where: { id: schemeId } }),
+    prisma.scholarship.findUnique({ where: { id: schemeId } }),
+    prisma.tender.findUnique({ where: { id: schemeId } }),
+    prisma.customScholarship.findUnique({ where: { id: schemeId } }),
+    prisma.customTender.findUnique({ where: { id: schemeId } }),
+  ]);
+
+  if (officialScheme) scheme = officialScheme;
+  else if (officialSchol) scheme = officialSchol;
+  else if (officialTender) scheme = officialTender;
+  else if (customScheme) scheme = { ...customScheme, name: customScheme.title, isCustom: true };
+  else if (customSchol) scheme = { ...customSchol, name: customSchol.title, isCustom: true };
+  else if (customTender) scheme = { ...customTender, name: customTender.title, isCustom: true };
+
+  // Look up stateData
+  let stateData = null;
+  if (stateId && stateId !== 'central') {
+    stateData = await prisma.state.findUnique({ where: { id: stateId } });
+  }
+
+  return {
+    props: JSON.parse(JSON.stringify({
+      scheme,
+      stateData,
+      stateId,
+      schemeId,
+    })),
+  };
+}
 
 async function saveApplication(refNo, scheme, stateId, stateData, formData) {
   try {
@@ -40,69 +74,21 @@ async function saveApplication(refNo, scheme, stateId, stateData, formData) {
   } catch (_) {}
 }
 
-async function findScheme(schemeId) {
-  const allStateSchemes = Object.values(stateSchemes).flat();
-  const allStateSchols  = Object.values(stateScholarships).flat();
-  const allStateTenders = Object.values(stateTenders).flat();
-
-  // Check static data first
-  const found = [
-    ...centralSchemes, ...allStateSchemes,
-    ...centralScholarships, ...allStateSchols,
-    ...centralTenders, ...allStateTenders,
-  ].find(s => s.id === schemeId);
-  if (found) return found;
-
-  // Fallback to API for custom schemes
-  try {
-    const res = await fetch(`/api/schemes?schemeId=${encodeURIComponent(schemeId)}`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.scheme || null;
-    }
-  } catch (_) {}
-  return null;
-}
-
-export default function SchemeFormPage() {
+export default function SchemeFormPage({ scheme, stateData, stateId, schemeId }) {
   const router = useRouter();
-  const { stateId, schemeId } = router.query;
   const { data: session } = useSession();
   const user = session?.user ?? null;
 
   const [submitted, setSubmitted] = useState(false);
   const [submissionData, setSubmissionData] = useState(null);
-  const [scheme, setScheme] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!schemeId) return;
-    async function load() {
-      setLoading(true);
-      const found = await findScheme(schemeId);
-      setScheme(found);
-      setLoading(false);
-    }
-    load();
-  }, [schemeId]);
-
-  // Auth guard — redirect to login if not authenticated
-  useEffect(() => {
-    if (session === null) {
-      router.push(`/login?redirect=${encodeURIComponent(router.asPath)}`);
-    }
-  }, [session]);
-
-  const allPlaces   = [...states, ...unionTerritories];
-  const userStateId = user?.state
-    ? allPlaces.find(s => s.name.toLowerCase() === user.state.toLowerCase())?.id
+  const userStateId = user?.state && stateData
+    ? stateData.id  // simplified: used for cross-state check
     : null;
-  const isOtherState = stateId && stateId !== 'central' && userStateId && stateId !== userStateId;
+  const isOtherState = stateId && stateId !== 'central' && user?.state && stateData &&
+    user.state.toLowerCase() !== stateData.name.toLowerCase();
 
-  const stateData = !stateId || stateId === 'central' ? null :
-    allPlaces.find(s => s.id === stateId);
-
-  if (!stateId || session === undefined) {
+  if (session === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -134,17 +120,6 @@ export default function SchemeFormPage() {
               View Central Schemes →
             </button>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500 font-medium">Loading scheme...</p>
         </div>
       </div>
     );
@@ -246,8 +221,8 @@ export default function SchemeFormPage() {
                 )}
               </div>
               <h1 className="text-2xl md:text-3xl font-extrabold">{scheme.name}</h1>
-              {(scheme.nameHindi || scheme.nameBengali) && (
-                <p className="text-white/70 mt-1">{scheme.nameHindi || scheme.nameBengali}</p>
+              {(scheme.nameLocal || scheme.nameHindi || scheme.nameBengali) && (
+                <p className="text-white/70 mt-1">{scheme.nameLocal || scheme.nameHindi || scheme.nameBengali}</p>
               )}
             </div>
           </div>

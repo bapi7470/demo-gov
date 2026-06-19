@@ -1,19 +1,26 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { states, unionTerritories } from '../data/states';
-import { privateOrgs, orgSectors } from '../data/privateOrgs';
-import { govEmployees } from '../data/govData';
+import prisma from '../lib/prisma';
 import { useAuth } from '../context/AuthContext';
 
-// Check if a PAN is a registered government employee
-function isGovEmployee(pan) {
-  if (!pan) return false;
-  const upperPan = pan.toUpperCase();
-  return Object.values(govEmployees).flat().some(emp => emp.pan === upperPan);
+export async function getServerSideProps() {
+  const [privateOrgs, allStatesData, govEmployeesRaw] = await Promise.all([
+    prisma.privateOrg.findMany({ orderBy: { name: 'asc' } }),
+    prisma.state.findMany({ orderBy: { name: 'asc' } }),
+    prisma.govEmployee.findMany({ select: { pan: true } }),
+  ]);
+  const govEmployeePans = new Set(govEmployeesRaw.map(e => e.pan).filter(Boolean));
+  return {
+    props: JSON.parse(JSON.stringify({
+      privateOrgs,
+      allStates: allStatesData,
+      govEmployeePans: [...govEmployeePans],
+    })),
+  };
 }
 
 // Build hierarchy including custom companies
-function buildFullHierarchy(customCompanies) {
+function buildFullHierarchy(privateOrgs, customCompanies) {
   const h = {};
   const all = [...privateOrgs, ...customCompanies];
   all.forEach(org => {
@@ -31,14 +38,8 @@ const COMPANY_SECTORS = ['IT / Software', 'Banking & Finance', 'Automobile / Man
   'Electric Vehicles / Tech', 'FMCG / Conglomerate', 'Pharmaceuticals',
   'Education / Training', 'Healthcare', 'Real Estate', 'Logistics', 'Other'];
 
-const STATE_LIST = ['Andhra Pradesh','Assam','Bihar','Chhattisgarh','Delhi','Goa','Gujarat',
-  'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
-  'Maharashtra','Odisha','Punjab','Rajasthan','Tamil Nadu','Telangana','Uttar Pradesh',
-  'Uttarakhand','West Bengal'];
-
-const allStates = [...states, ...unionTerritories];
-
-export default function CompanyDirectoryPage() {
+export default function CompanyDirectoryPage({ privateOrgs, allStates, govEmployeePans }) {
+  const govEmployeePanSet = new Set(govEmployeePans);
   const router = useRouter();
   const { user } = useAuth();
 
@@ -46,7 +47,7 @@ export default function CompanyDirectoryPage() {
   useEffect(() => {
     fetch('/api/companies').then(r => r.json()).then(data => setCustomCompanies(Array.isArray(data) ? data : [])).catch(() => {});
   }, []);
-  const hierarchy = useMemo(() => buildFullHierarchy(customCompanies), [customCompanies]);
+  const hierarchy = useMemo(() => buildFullHierarchy(privateOrgs, customCompanies), [privateOrgs, customCompanies]);
   const statesWithOrgs = Object.keys(hierarchy);
 
   const [selectedState, setSelectedState] = useState(null);
@@ -67,20 +68,28 @@ export default function CompanyDirectoryPage() {
   const [formErrors, setFormErrors] = useState({});
   const [regSuccess, setRegSuccess] = useState(null);
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     setRegError('');
     const input = regNumber.trim();
     if (!input) { setRegError('Please enter your Registration Number.'); return; }
 
-    // Find user by mobile (registration number = mobile)
-    const found = db.find('users', u => u.mobile === input || u.id === input);
+    // Find user by mobile via API
+    let found = null;
+    try {
+      const res = await fetch(`/api/users?mobile=${encodeURIComponent(input)}`);
+      if (res.ok) {
+        const data = await res.json();
+        found = data.user || null;
+      }
+    } catch (_) {}
+
     if (!found) {
       setRegError('Registration Number not found. Please register first.');
       return;
     }
 
     // Check if govt employee
-    if (found.pan && isGovEmployee(found.pan)) {
+    if (found.pan && govEmployeePanSet.has(found.pan.toUpperCase())) {
       setRegError(`❌ Blocked: "${found.fullName}" is registered as a Government Employee (PAN: ${found.pan?.slice(0,5)}*****). Government employees cannot create private companies.`);
       return;
     }
@@ -110,7 +119,7 @@ export default function CompanyDirectoryPage() {
     const errs = validateCompanyForm();
     if (Object.keys(errs).length > 0) { setFormErrors(errs); return; }
 
-    const stateData = allStates.find(s => s.name === companyForm.stateId || s.id === companyForm.stateId);
+    const stateObj = allStates.find(s => s.name === companyForm.stateId || s.id === companyForm.stateId);
 
     const newCompany = {
       id: `custom-company-${Date.now()}`,
@@ -118,8 +127,8 @@ export default function CompanyDirectoryPage() {
       shortName: companyForm.shortName.trim() || companyForm.name.trim().split(' ').map(w => w[0]).join(''),
       gst: companyForm.gst.trim().toUpperCase(),
       sector: companyForm.sector,
-      stateId: stateData?.id || companyForm.stateId,
-      stateName: stateData?.name || companyForm.stateId,
+      stateId: stateObj?.id || companyForm.stateId,
+      stateName: stateObj?.name || companyForm.stateId,
       district: companyForm.district.trim(),
       city: companyForm.city.trim(),
       adminPassword: companyForm.adminPassword,
@@ -134,8 +143,13 @@ export default function CompanyDirectoryPage() {
       createdAt: new Date().toISOString(),
     };
 
-    // Save to IndexedDB
-    await db.put('custom_companies', newCompany).catch(() => {});
+    try {
+      await fetch('/api/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCompany),
+      });
+    } catch (_) {}
     setCustomCompanies(prev => [...prev, newCompany]);
     setRegSuccess(newCompany);
     setRegStep('success');
@@ -583,7 +597,7 @@ export default function CompanyDirectoryPage() {
                       <select value={companyForm.stateId} onChange={e => setCompanyForm(p=>({...p,stateId:e.target.value}))}
                         className={`form-input ${formErrors.stateId?'border-red-400':''}`}>
                         <option value="">-- Select State --</option>
-                        {STATE_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                        {allStates.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                       {formErrors.stateId && <p className="text-red-500 text-xs mt-1">⚠ {formErrors.stateId}</p>}
                     </div>

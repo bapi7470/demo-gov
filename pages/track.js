@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { states, unionTerritories } from '../data/states';
-import { getStateSchemesWithCentral } from '../data/schemes';
-import { stateExams } from '../data/exams';
-import { stateScholarships } from '../data/scholarships';
-import { stateTenders } from '../data/tenders';
+import prisma from '../lib/prisma';
+
+export async function getServerSideProps() {
+  const [states, unionTerritories] = await Promise.all([
+    prisma.state.findMany({ where: { type: 'state' }, orderBy: { name: 'asc' } }),
+    prisma.state.findMany({ where: { type: 'union_territory' }, orderBy: { name: 'asc' } }),
+  ]);
+  return { props: JSON.parse(JSON.stringify({ states, unionTerritories })) };
+}
 
 const STATUS_CONFIG = {
   'Under Review':         { bg: 'bg-yellow-50 border-yellow-300', badge: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500', icon: '🔍', msg: 'Your application is currently under review. Documents are being verified.' },
@@ -14,10 +18,9 @@ const STATUS_CONFIG = {
   'Rejected':             { bg: 'bg-red-50 border-red-300',       badge: 'bg-red-100 text-red-800',     dot: 'bg-red-500',    icon: '❌', msg: 'Your application has been rejected.' },
 };
 
-const allStates = [...states, ...unionTerritories];
-
 // No auth required for this page
-export default function TrackApplicationPage() {
+export default function TrackApplicationPage({ states, unionTerritories }) {
+  const allStates = [...states, ...unionTerritories];
   const router = useRouter();
   const [step, setStep] = useState('states'); // states | schemes | input | result
   const [selectedState, setSelectedState] = useState(null);
@@ -32,18 +35,21 @@ export default function TrackApplicationPage() {
 
   const stateData = selectedState ? allStates.find(s => s.id === selectedState) : null;
 
-  // Load schemes when state selected
+  // Load schemes when state selected — fetch from DB via API
   useEffect(() => {
     if (!selectedState) return;
-    const { state: st, central } = getStateSchemesWithCentral(selectedState);
-    const exams   = stateExams[selectedState] || [];
-    const schols  = stateScholarships[selectedState] || [];
-    const tenders = stateTenders[selectedState] || [];
-
-    const all = [...st, ...central, ...exams, ...schols, ...tenders];
-    // Dedupe by id
-    const seen = new Set();
-    setSchemeList(all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }));
+    setSchemeList([]);
+    Promise.all([
+      fetch(`/api/schemes?scope=state&stateId=${selectedState}`).then(r => r.json()),
+      fetch(`/api/schemes?scope=central`).then(r => r.json()),
+      fetch(`/api/exams?scope=state&stateId=${selectedState}`).then(r => r.json()),
+      fetch(`/api/scholarships?scope=state&stateId=${selectedState}`).then(r => r.json()),
+      fetch(`/api/tenders?stateId=${selectedState}`).then(r => r.json()),
+    ]).then(([stateSchemes, centralSchemes, exams, schols, tenders]) => {
+      const all = [...(stateSchemes||[]), ...(centralSchemes||[]), ...(exams||[]), ...(schols||[]), ...(tenders||[])];
+      const seen = new Set();
+      setSchemeList(all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }));
+    }).catch(() => setSchemeList([]));
   }, [selectedState]);
 
   const handleSearch = async () => {
@@ -198,8 +204,8 @@ export default function TrackApplicationPage() {
                       </span>
                     </div>
                     <p className="font-bold text-gray-800 text-sm leading-tight">{scheme.name}</p>
-                    {(scheme.nameBengali || scheme.nameHindi) && (
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">{scheme.nameBengali || scheme.nameHindi}</p>
+                    {(scheme.nameLocal || scheme.nameBengali || scheme.nameHindi) && (
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{scheme.nameLocal || scheme.nameBengali || scheme.nameHindi}</p>
                     )}
                     <p className="text-xs text-green-700 font-semibold mt-1">{scheme.benefit || scheme.estimatedValue}</p>
                     <p className="text-xs text-blue-600 font-semibold mt-2">Check Status →</p>

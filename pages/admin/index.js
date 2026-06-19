@@ -1,10 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import DistrictRolesManager from '../../components/DistrictRolesManager';
-import { stateSchemes, centralSchemes } from '../../data/schemes';
-import { stateExams, centralExams } from '../../data/exams';
-import { stateScholarships, centralScholarships } from '../../data/scholarships';
-import { stateTenders, centralTenders } from '../../data/tenders';
+import prisma from '../../lib/prisma';
+
+export async function getServerSideProps() {
+  const [allSchemes, allExams, allScholarships, allTenders] = await Promise.all([
+    prisma.scheme.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.exam.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.scholarship.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.tender.findMany({ orderBy: { createdAt: 'asc' } }),
+  ]);
+  return {
+    props: JSON.parse(JSON.stringify({ allSchemes, allExams, allScholarships, allTenders })),
+  };
+}
 
 // ── Constants ──────────────────────────────────────────────
 const FIELD_TYPES = [
@@ -221,7 +230,7 @@ function FormBuilder({ type, stateId, stateName, onBack, onPublished, editItem =
       formFields: cleanFields,
       publishedAt: isEditing ? editItem.publishedAt : new Date().toISOString().split('T')[0],
       updatedAt: isEditing ? new Date().toISOString().split('T')[0] : undefined,
-      isCustom: true,
+      isCustom: isEditing ? Boolean(editItem.isCustom) : true,
     };
 
     const endpoint = isScheme      ? '/api/schemes'
@@ -634,7 +643,7 @@ function FormBuilder({ type, stateId, stateName, onBack, onPublished, editItem =
 
 
 // ── Main Admin Dashboard ────────────────────────────────────
-export default function AdminDashboard() {
+export default function AdminDashboard({ allSchemes, allExams, allScholarships, allTenders }) {
   const router = useRouter();
   const [adminInfo, setAdminInfo] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -653,6 +662,19 @@ export default function AdminDashboard() {
       return;
     }
     setAuthChecked(true);
+
+    // Load edit item passed from all-items page via sessionStorage
+    try {
+      const stored = sessionStorage.getItem('admin_edit_item');
+      if (stored) {
+        sessionStorage.removeItem('admin_edit_item');
+        const { editItem, editType } = JSON.parse(stored);
+        if (editItem && editType) {
+          setEditingItem({ item: editItem, type: editType });
+          setView('add-' + editType);
+        }
+      }
+    } catch (_) {}
   }, []);
 
   const [view, setView] = useState('home');
@@ -680,10 +702,11 @@ export default function AdminDashboard() {
           fetch(`/api/tenders?stateId=${stateId}`),
           fetch(`/api/applications?stateId=${stateId}`),
         ]);
-        if (schemesRes.ok)      setCustomSchemes(await schemesRes.json());
-        if (examsRes.ok)        setCustomExams(await examsRes.json());
-        if (scholarshipsRes.ok) setCustomScholarships(await scholarshipsRes.json());
-        if (tendersRes.ok)      setCustomTenders(await tendersRes.json());
+        // Only keep custom-created items in state; official items come from getServerSideProps
+        if (schemesRes.ok)      { const d = await schemesRes.json(); setCustomSchemes(d.filter(s => s.isCustom)); }
+        if (examsRes.ok)        { const d = await examsRes.json();   setCustomExams(d.filter(e => e.isCustom)); }
+        if (scholarshipsRes.ok) { const d = await scholarshipsRes.json(); setCustomScholarships(d.filter(s => s.isCustom)); }
+        if (tendersRes.ok)      { const d = await tendersRes.json(); setCustomTenders(d.filter(t => t.isCustom)); }
         if (appsRes.ok) {
           const apps = await appsRes.json();
           setPendingApps(apps.filter(a => a.status === 'Under Review' || a.status === 'Application Received').length);
@@ -715,10 +738,18 @@ export default function AdminDashboard() {
     setView('add-' + type);
   };
 
-  const staticSchemes      = isCentral ? centralSchemes      : (stateSchemes[stateId] || []);
-  const staticExams        = isCentral ? centralExams        : (stateExams[stateId] || []);
-  const staticScholarships = isCentral ? centralScholarships : (stateScholarships[stateId] || []);
-  const staticTenders      = isCentral ? centralTenders      : (stateTenders[stateId] || []);
+  const staticSchemes      = isCentral
+    ? allSchemes.filter(s => s.scope === 'central')
+    : allSchemes.filter(s => s.stateId === stateId);
+  const staticExams        = isCentral
+    ? allExams.filter(e => e.scope === 'central')
+    : allExams.filter(e => e.stateId === stateId);
+  const staticScholarships = isCentral
+    ? allScholarships.filter(s => s.scope === 'central')
+    : allScholarships.filter(s => s.stateId === stateId);
+  const staticTenders      = isCentral
+    ? allTenders.filter(t => t.stateId === 'central')
+    : allTenders.filter(t => t.stateId === stateId);
 
   const publishedSchemes      = [...staticSchemes,      ...customSchemes];
   const publishedExams        = [...staticExams,        ...customExams];
@@ -727,6 +758,19 @@ export default function AdminDashboard() {
   const totalPublished = publishedSchemes.length + publishedExams.length + publishedScholarships.length + publishedTenders.length;
 
   const handlePublished = (item, type) => {
+    setSuccessMsg(editingItem
+      ? `✅ "${item.name}" updated successfully!`
+      : `✅ "${item.name}" published! Citizens can now view and apply.`
+    );
+    setEditingItem(null);
+    setView('home');
+
+    if (!item.isCustom) {
+      // Built-in item updated in DB — reload to get fresh server-side data
+      setTimeout(() => window.location.reload(), 1200);
+      return;
+    }
+
     const updater = (prev) => {
       const exists = prev.some(x => x.id === item.id);
       return exists ? prev.map(x => x.id === item.id ? item : x) : [...prev, item];
@@ -735,28 +779,27 @@ export default function AdminDashboard() {
     else if (type === 'exam')        setCustomExams(updater);
     else if (type === 'scholarship') setCustomScholarships(updater);
     else                             setCustomTenders(updater);
-    setSuccessMsg(editingItem
-      ? `✅ "${item.name}" updated successfully!`
-      : `✅ "${item.name}" published! Citizens can now view and apply.`
-    );
-    setEditingItem(null);
-    setView('home');
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
-  const deleteItem = async (type, id) => {
-    if (!window.confirm('Delete this custom item? This cannot be undone.')) return;
+  const deleteItem = async (type, id, isStatic) => {
+    if (!window.confirm('এই আইটেমটি ডিলিট করবেন? এটি পূর্বাবস্থায় ফেরানো যাবে না।')) return;
     const endpoint = type === 'scheme'      ? '/api/schemes'
                    : type === 'exam'        ? '/api/exams'
                    : type === 'scholarship' ? '/api/scholarships'
                    :                          '/api/tenders';
     try {
-      await fetch(`${endpoint}/${id}`, { method: 'DELETE' });
+      await fetch(`${endpoint}?id=${id}`, { method: 'DELETE' });
     } catch (_) {}
-    if      (type === 'scheme')      setCustomSchemes(prev => prev.filter(x => x.id !== id));
-    else if (type === 'exam')        setCustomExams(prev => prev.filter(x => x.id !== id));
-    else if (type === 'scholarship') setCustomScholarships(prev => prev.filter(x => x.id !== id));
-    else                             setCustomTenders(prev => prev.filter(x => x.id !== id));
+    if (isStatic) {
+      // Re-fetch to reflect DB change
+      window.location.reload();
+    } else {
+      if      (type === 'scheme')      setCustomSchemes(prev => prev.filter(x => x.id !== id));
+      else if (type === 'exam')        setCustomExams(prev => prev.filter(x => x.id !== id));
+      else if (type === 'scholarship') setCustomScholarships(prev => prev.filter(x => x.id !== id));
+      else                             setCustomTenders(prev => prev.filter(x => x.id !== id));
+    }
   };
 
   return (
@@ -989,22 +1032,14 @@ export default function AdminDashboard() {
 
                               <div className="mt-3 flex gap-2">
                                 <span className="flex-1 bg-green-100 text-green-700 text-xs text-center py-1.5 rounded-lg font-semibold">🟢 Live</span>
-                                {isCustom ? (
-                                  <>
-                                    <button onClick={() => handleEdit(item, type)}
-                                      className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs py-1.5 rounded-lg font-semibold transition-colors">
-                                      ✏️ Edit
-                                    </button>
-                                    <button onClick={() => deleteItem(type, item.id)}
-                                      className="bg-red-50 hover:bg-red-100 text-red-600 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors">
-                                      🗑
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="flex-1 bg-gray-100 text-gray-400 text-xs text-center py-1.5 rounded-lg font-semibold cursor-not-allowed">
-                                    🔒 Built-in
-                                  </span>
-                                )}
+                                <button onClick={() => handleEdit(item, type)}
+                                  className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs py-1.5 rounded-lg font-semibold transition-colors">
+                                  ✏️ Edit
+                                </button>
+                                <button onClick={() => deleteItem(type, item.id, !isCustom)}
+                                  className="bg-red-50 hover:bg-red-100 text-red-600 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors">
+                                  🗑
+                                </button>
                               </div>
                             </div>
                           );

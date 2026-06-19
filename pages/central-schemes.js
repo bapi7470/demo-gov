@@ -1,38 +1,28 @@
-import { useState, useEffect } from 'react';
-import { centralSchemes } from '../data/schemes';
+import { useState } from 'react';
+import prisma from '../lib/prisma';
 import SchemeCard from '../components/SchemeCard';
 
-export default function CentralSchemesPage() {
+export async function getServerSideProps() {
+  const [official, custom] = await Promise.all([
+    prisma.scheme.findMany({ where: { scope: 'central' }, orderBy: { createdAt: 'asc' } }),
+    prisma.customScheme.findMany({ where: { stateId: 'central' } }),
+  ]);
+  const customMapped = custom.map(s => ({ ...s, name: s.title, isCustom: true }));
+  const allSchemes = [...official, ...customMapped];
+  return { props: JSON.parse(JSON.stringify({ allSchemes })) };
+}
+
+export default function CentralSchemesPage({ allSchemes }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [customSchemes, setCustomSchemes] = useState([]);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/schemes?stateId=central');
-        if (res.ok) {
-          const data = await res.json();
-          setCustomSchemes(data.schemes || []);
-        }
-      } catch (_) {}
-    }
-    load();
-  }, []);
-
-  // Custom overrides same-ID built-in
-  const customIds  = new Set(customSchemes.map(s => s.id));
-  const allSchemes = [
-    ...centralSchemes.filter(s => !customIds.has(s.id)),
-    ...customSchemes,
-  ];
-  const categories = ['All', ...new Set(allSchemes.map((s) => s.category))];
+  const categories = ['All', ...new Set(allSchemes.map((s) => s.category).filter(Boolean))];
 
   const filtered = allSchemes.filter((s) => {
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.category.toLowerCase().includes(search.toLowerCase()) ||
-      (s.nameHindi && s.nameHindi.includes(search));
+      (s.category || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.nameLocal && s.nameLocal.includes(search));
     const matchCat = categoryFilter === 'All' || s.category === categoryFilter;
     return matchSearch && matchCat;
   });
@@ -86,7 +76,7 @@ export default function CentralSchemesPage() {
         ) : (
           <div className="text-center py-20 text-gray-500">
             <div className="text-5xl mb-4">🔍</div>
-            <p className="font-medium">No schemes found for "{search}"</p>
+            <p className="font-medium">No schemes found for &quot;{search}&quot;</p>
           </div>
         )}
       </div>

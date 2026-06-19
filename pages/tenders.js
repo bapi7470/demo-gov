@@ -1,43 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { centralTenders, stateTenders } from '../data/tenders';
+import prisma from '../lib/prisma';
 
-const allStateTenders = Object.entries(stateTenders).flatMap(([stateId, list]) =>
-  list.map(t => ({ ...t, _stateId: stateId }))
-);
+export async function getServerSideProps() {
+  const [official, custom] = await Promise.all([
+    prisma.tender.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.customTender.findMany(),
+  ]);
+  const customMapped = custom.map(t => ({
+    ...t,
+    name: t.title,
+    _stateId: t.stateId || 'central',
+    isCustom: true,
+  }));
+  const allTenders = [
+    ...official.map(t => ({ ...t, _stateId: t.stateId })),
+    ...customMapped,
+  ];
+  return { props: JSON.parse(JSON.stringify({ allTenders })) };
+}
 
-export default function TendersPage() {
+export default function TendersPage({ allTenders }) {
   const router = useRouter();
   const [search, setSearch]   = useState('');
   const [catFilter, setCat]   = useState('All');
   const [statusFilter, setStatus] = useState('All');
-  const [customTenders, setCustomTenders] = useState([]);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/schemes?type=custom_tenders');
-        if (res.ok) {
-          const data = await res.json();
-          setCustomTenders((data.tenders || []).map(t => ({ ...t, _stateId: t.stateId || 'central' })));
-        }
-      } catch (_) {}
-    }
-    load();
-  }, []);
-
-  const allTenders = [
-    ...centralTenders.map(t => ({ ...t, _stateId: 'central' })),
-    ...allStateTenders,
-    ...customTenders,
-  ];
-
-  const subcategories = ['All', ...new Set(allTenders.map(t => t.subcategory))];
+  const subcategories = ['All', ...new Set(allTenders.map(t => t.subcategory).filter(Boolean))];
 
   const filtered = allTenders.filter(t => {
-    const matchSearch = t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.department.toLowerCase().includes(search.toLowerCase()) ||
-      t.tenderNo?.toLowerCase().includes(search.toLowerCase());
+    const name = t.name || t.title || '';
+    const dept = t.department || '';
+    const matchSearch = name.toLowerCase().includes(search.toLowerCase()) ||
+      dept.toLowerCase().includes(search.toLowerCase()) ||
+      (t.tenderNo || '').toLowerCase().includes(search.toLowerCase());
     const matchCat    = catFilter === 'All' || t.subcategory === catFilter;
     const matchStatus = statusFilter === 'All' || t.status === statusFilter;
     return matchSearch && matchCat && matchStatus;
@@ -92,18 +88,18 @@ export default function TendersPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {filtered.map(tender => (
               <div key={tender.id}
-                className={`bg-white rounded-2xl border-2 ${tender.color} shadow-sm overflow-hidden`}>
+                className={`bg-white rounded-2xl border-2 ${tender.color || 'border-gray-100'} shadow-sm overflow-hidden`}>
                 <div className="p-5">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-3xl">{tender.icon}</span>
+                      <span className="text-3xl">{tender.icon || '📋'}</span>
                       <div>
-                        <h3 className="font-bold text-gray-800 text-sm leading-tight">{tender.name}</h3>
+                        <h3 className="font-bold text-gray-800 text-sm leading-tight">{tender.name || tender.title}</h3>
                         <p className="text-xs text-gray-500 mt-0.5">{tender.department}</p>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-2">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tender.badgeColor}`}>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tender.badgeColor || 'bg-gray-100 text-gray-600'}`}>
                         {tender.subcategory}
                       </span>
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusStyle[tender.status] || 'bg-gray-100 text-gray-600'}`}>

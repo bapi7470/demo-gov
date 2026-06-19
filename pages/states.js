@@ -1,8 +1,16 @@
 import { useState } from 'react';
-import { states, unionTerritories } from '../data/states';
+import prisma from '../lib/prisma';
 import StateCard from '../components/StateCard';
 
-export default function StatesPage() {
+export async function getServerSideProps() {
+  const [states, unionTerritories] = await Promise.all([
+    prisma.state.findMany({ where: { type: 'state' }, orderBy: { name: 'asc' } }),
+    prisma.state.findMany({ where: { type: 'union_territory' }, orderBy: { name: 'asc' } }),
+  ]);
+  return { props: JSON.parse(JSON.stringify({ states, unionTerritories })) };
+}
+
+export default function StatesPage({ states, unionTerritories }) {
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('All');
   const [tab, setTab] = useState('states');
@@ -12,7 +20,7 @@ export default function StatesPage() {
   const filterItems = (items) =>
     items.filter((s) => {
       const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) ||
-        s.capital.toLowerCase().includes(search.toLowerCase());
+        (s.capital || '').toLowerCase().includes(search.toLowerCase());
       const matchRegion = regionFilter === 'All' || s.region === regionFilter;
       return matchSearch && matchRegion;
     });

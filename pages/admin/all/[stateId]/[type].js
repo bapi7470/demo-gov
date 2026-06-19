@@ -1,9 +1,38 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { stateSchemes, centralSchemes } from '../../../../data/schemes';
-import { stateExams, centralExams } from '../../../../data/exams';
-import { stateScholarships, centralScholarships } from '../../../../data/scholarships';
-import { stateTenders, centralTenders } from '../../../../data/tenders';
+import prisma from '../../../../lib/prisma';
+
+export async function getServerSideProps({ params }) {
+  const { stateId, type } = params;
+  const isCentral = stateId === 'central';
+
+  let staticItems = [];
+  if (type === 'scheme') {
+    staticItems = await prisma.scheme.findMany({
+      where: isCentral ? { scope: 'central' } : { stateId },
+      orderBy: { createdAt: 'asc' },
+    });
+  } else if (type === 'exam') {
+    staticItems = await prisma.exam.findMany({
+      where: isCentral ? { scope: 'central' } : { stateId },
+      orderBy: { createdAt: 'asc' },
+    });
+  } else if (type === 'scholarship') {
+    staticItems = await prisma.scholarship.findMany({
+      where: isCentral ? { scope: 'central' } : { stateId },
+      orderBy: { createdAt: 'asc' },
+    });
+  } else if (type === 'tender') {
+    staticItems = await prisma.tender.findMany({
+      where: isCentral ? { stateId: 'central' } : { stateId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  return {
+    props: JSON.parse(JSON.stringify({ staticItemsData: staticItems })),
+  };
+}
 
 const TYPE_CONFIG = {
   scheme:      { label: 'Schemes',      emoji: '🏛️', color: 'from-orange-600 to-orange-800' },
@@ -12,13 +41,14 @@ const TYPE_CONFIG = {
   tender:      { label: 'Tenders',      emoji: '📋', color: 'from-amber-600 to-orange-700' },
 };
 
-export default function GovAllItemsPage() {
+export default function GovAllItemsPage({ staticItemsData }) {
   const router = useRouter();
   const { stateId, type } = router.query;
 
   const [search, setSearch] = useState('');
   const [showFilter, setShowFilter] = useState('all'); // 'all' | 'builtin' | 'custom'
   const [customItems, setCustomItems] = useState([]);
+  const [deletedIds, setDeletedIds] = useState(new Set());
   const [authChecked, setAuthChecked] = useState(false);
 
   // Gov admin auth guard
@@ -62,14 +92,25 @@ export default function GovAllItemsPage() {
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.scheme;
   const isCentral = stateId === 'central';
 
-  // Load static items
-  const staticItems = (() => {
-    if (type === 'scheme')      return isCentral ? centralSchemes      : (stateSchemes[stateId] || []);
-    if (type === 'exam')        return isCentral ? centralExams        : (stateExams[stateId] || []);
-    if (type === 'scholarship') return isCentral ? centralScholarships : (stateScholarships[stateId] || []);
-    if (type === 'tender')      return isCentral ? centralTenders      : (stateTenders[stateId] || []);
-    return [];
-  })().map(item => ({ ...item, _isCustom: false }));
+  const handleDelete = async (item) => {
+    if (!window.confirm('এই আইটেমটি ডিলিট করবেন? এটি পূর্বাবস্থায় ফেরানো যাবে না।')) return;
+    const endpoint = type === 'scheme'      ? '/api/schemes'
+                   : type === 'exam'        ? '/api/exams'
+                   : type === 'scholarship' ? '/api/scholarships'
+                   :                          '/api/tenders';
+    await fetch(`${endpoint}?id=${item.id}`, { method: 'DELETE' });
+    setDeletedIds(prev => new Set([...prev, item.id]));
+  };
+
+  const handleEdit = (item) => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('admin_edit_item', JSON.stringify({ editItem: item, editType: type }));
+    }
+    router.push('/admin');
+  };
+
+  // Static items from DB via getServerSideProps
+  const staticItems = (staticItemsData || []).map(item => ({ ...item, _isCustom: false }));
 
   // Custom overrides same-ID built-in
   const customItemIds = new Set(customItems.map(i => i.id));
@@ -80,6 +121,7 @@ export default function GovAllItemsPage() {
 
   // Filter
   const filtered = allItems.filter(item => {
+    if (deletedIds.has(item.id)) return false;
     const matchSearch = !search ||
       item.name?.toLowerCase().includes(search.toLowerCase()) ||
       item.category?.toLowerCase().includes(search.toLowerCase()) ||
@@ -204,24 +246,18 @@ export default function GovAllItemsPage() {
 
                 <div className="mt-3 flex gap-2">
                   <span className="flex-1 bg-green-100 text-green-700 text-xs text-center py-1.5 rounded-lg font-semibold">🟢 Live</span>
-                  {item._isCustom ? (
-                    <button
-                      onClick={() => {
-                        // Pass edit intent via sessionStorage since Next.js router.push state is shallow
-                        if (typeof window !== 'undefined') {
-                          sessionStorage.setItem('admin_edit_item', JSON.stringify({ editItem: item, editType: type }));
-                        }
-                        router.push('/admin');
-                      }}
-                      className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs py-1.5 rounded-lg font-semibold transition-colors"
-                    >
-                      ✏️ Edit
-                    </button>
-                  ) : (
-                    <span className="flex-1 bg-gray-100 text-gray-400 text-xs text-center py-1.5 rounded-lg font-semibold cursor-not-allowed">
-                      🔒 Built-in
-                    </span>
-                  )}
+                  <button
+                    onClick={() => handleEdit(item)}
+                    className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs py-1.5 rounded-lg font-semibold transition-colors"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item)}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors"
+                  >
+                    🗑
+                  </button>
                 </div>
               </div>
             ))}

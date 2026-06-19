@@ -1,15 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useSession, signOut } from 'next-auth/react';
+import prisma from '../lib/prisma';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { centralSchemes, stateSchemes } from '../data/schemes';
+
+export async function getServerSideProps() {
+  const schemes = await prisma.scheme.findMany({
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, icon: true, benefit: true, category: true, badgeColor: true, scope: true, stateId: true },
+  });
+  return { props: JSON.parse(JSON.stringify({ initialSchemes: schemes })) };
+}
 
 const EDUCATION_OPTIONS = ['Class 8', 'Class 10', 'Class 12', 'Diploma', 'Graduate', 'Post Graduate', 'PhD', 'Other'];
 const CATEGORY_OPTIONS  = ['General', 'OBC', 'SC', 'ST', 'EWS'];
 const GENDER_OPTIONS    = ['Male', 'Female', 'Other'];
 
-export default function ProfilePage() {
+export default function ProfilePage({ initialSchemes = [] }) {
   const router = useRouter();
   const { data: session, status, update: updateSession } = useSession();
   const { getBeneficiaryByPan } = useApp();
@@ -19,7 +27,7 @@ export default function ProfilePage() {
   const [editData,  setEditData]    = useState({});
   const [saveMsg,   setSaveMsg]     = useState('');
   const [myApplications, setMyApplications] = useState([]);
-  const [allSchemes, setAllSchemes] = useState([]);
+  const [allSchemes] = useState(initialSchemes);
 
   useEffect(() => {
     if (!session && status !== 'loading') {
@@ -36,7 +44,6 @@ export default function ProfilePage() {
         .then(data => setMyApplications(Array.isArray(data) ? data : []))
         .catch(() => setMyApplications([]));
     }
-    setAllSchemes([...centralSchemes, ...Object.values(stateSchemes).flat()]);
   }, [session]);
 
   if (!session && status !== 'loading') return null;
@@ -62,17 +69,14 @@ export default function ProfilePage() {
 
   const startEdit = () => {
     setEditData({
-      fullName:         user.fullName || '',
-      dob:              user.dob || '',
-      gender:           user.gender || '',
-      email:            user.email || '',
-      education:        user.education || '',
-      state:            user.state || '',
-      district:         user.district || '',
-      category:         user.category || '',
-      address:          user.address || '',
-      bankAccount:      user.bankAccount || '',
-      ifsc:             user.ifsc || '',
+      fullName:    user.fullName || '',
+      email:       user.email || '',
+      education:   user.education || '',
+      district:    user.district || '',
+      category:    user.category || '',
+      address:     user.address || '',
+      bankAccount: user.bankAccount || '',
+      ifsc:        user.ifsc || '',
     });
     setIsEditing(true);
     setSaveMsg('');

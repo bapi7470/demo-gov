@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { GOV_ADMINS } from '../../data/govAdmins';
 
 export default function GovLoginPage() {
   const router = useRouter();

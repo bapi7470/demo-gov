@@ -1,9 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
-import { centralExams, stateExams } from '../../../data/exams';
-import { states, unionTerritories } from '../../../data/states';
+import prisma from '../../../lib/prisma';
 import SchemeForm from '../../../components/SchemeForm';
+
+export async function getServerSideProps({ params }) {
+  const { stateId, examId } = params;
+
+  const [officialExam, stateData] = await Promise.all([
+    prisma.exam.findUnique({ where: { id: examId } }),
+    stateId && stateId !== 'central'
+      ? prisma.state.findUnique({ where: { id: stateId } })
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    props: JSON.parse(JSON.stringify({
+      exam: officialExam,
+      stateData,
+      stateId,
+      examId,
+    })),
+  };
+}
 
 async function saveExamApplication(refNo, exam, stateId, stateData, formData) {
   try {
@@ -33,71 +52,18 @@ async function saveExamApplication(refNo, exam, stateId, stateData, formData) {
   } catch (_) {}
 }
 
-async function findExam(examId) {
-  const allStateExams = Object.values(stateExams).flat();
-
-  // Check static data first
-  const found = [...centralExams, ...allStateExams].find(e => e.id === examId);
-  if (found) return found;
-
-  // Fallback to API for custom exams
-  try {
-    const res = await fetch(`/api/schemes?examId=${encodeURIComponent(examId)}&type=custom_exams`);
-    if (res.ok) {
-      const data = await res.json();
-      return data.exam || null;
-    }
-  } catch (_) {}
-  return null;
-}
-
-export default function ExamFormPage() {
+export default function ExamFormPage({ exam, stateData, stateId, examId }) {
   const router = useRouter();
-  const { stateId, examId } = router.query;
   const { data: session } = useSession();
   const user = session?.user ?? null;
 
   const [submitted, setSubmitted] = useState(false);
   const [submissionData, setSubmissionData] = useState(null);
-  const [exam, setExam] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!examId) return;
-    async function load() {
-      setLoading(true);
-      const found = await findExam(examId);
-      setExam(found);
-      setLoading(false);
-    }
-    load();
-  }, [examId]);
-
-  // Auth guard — redirect to login if not authenticated
-  useEffect(() => {
-    if (session === null) {
-      router.push(`/login?redirect=${encodeURIComponent(router.asPath)}`);
-    }
-  }, [session]);
-
-  const stateData = !stateId || stateId === 'central' ? null :
-    [...states, ...unionTerritories].find(s => s.id === stateId);
-
-  if (!stateId || session === undefined) {
+  if (session === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500 font-medium">Loading exam...</p>
-        </div>
       </div>
     );
   }

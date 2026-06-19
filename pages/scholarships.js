@@ -1,47 +1,59 @@
-import { useState, useEffect } from 'react';
-import { centralScholarships, stateScholarships } from '../data/scholarships';
-import { states } from '../data/states';
+import { useState } from 'react';
+import prisma from '../lib/prisma';
 import SchemeCard from '../components/SchemeCard';
 
-const allStateSchols = Object.entries(stateScholarships).flatMap(([stateId, list]) =>
-  list.map(s => ({ ...s, _stateId: stateId }))
-);
+export async function getServerSideProps() {
+  const [official, custom, allStates] = await Promise.all([
+    prisma.scholarship.findMany({ orderBy: { createdAt: 'asc' } }),
+    prisma.customScholarship.findMany(),
+    prisma.state.findMany({ orderBy: { name: 'asc' } }),
+  ]);
+  const customMapped = custom.map(s => ({
+    ...s,
+    name: s.title,
+    benefit: s.amount,
+    _stateId: s.stateId || 'central',
+    isCustom: true,
+  }));
+  const allScholarships = [
+    ...official.map(s => ({ ...s, _stateId: s.stateId || (s.scope === 'central' ? 'central' : null) })),
+    ...customMapped,
+  ];
+  const centralCount = official.filter(s => s.scope === 'central').length;
+  const stateCount = official.filter(s => s.scope === 'state').length + custom.length;
+  // unique state IDs with scholarships (for dropdown)
+  const stateIdsWithSchols = [...new Set(
+    official.filter(s => s.stateId && s.scope === 'state').map(s => s.stateId)
+  )];
+  const statesWithSchols = allStates.filter(s => stateIdsWithSchols.includes(s.id));
+  return {
+    props: JSON.parse(JSON.stringify({
+      allScholarships,
+      centralCount,
+      stateCount,
+      statesWithSchols,
+      allStates,
+    })),
+  };
+}
 
-export default function ScholarshipsPage() {
+export default function ScholarshipsPage({ allScholarships, centralCount, stateCount, statesWithSchols, allStates }) {
   const [search, setSearch]   = useState('');
   const [catFilter, setCat]   = useState('All');
   const [stateFilter, setStateFilter] = useState('All');
-  const [customSchols, setCustomSchols] = useState([]);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/schemes?type=custom_scholarships');
-        if (res.ok) {
-          const data = await res.json();
-          setCustomSchols((data.scholarships || []).map(s => ({ ...s, _stateId: s.stateId || 'central' })));
-        }
-      } catch (_) {}
-    }
-    load();
-  }, []);
-
-  const allScholarships = [
-    ...centralScholarships.map(s => ({ ...s, _stateId: 'central' })),
-    ...allStateSchols,
-    ...customSchols,
-  ];
-
-  const categories = ['All', ...new Set(allScholarships.map(s => s.subcategory || 'Central'))];
+  const categories = ['All', ...new Set(allScholarships.map(s => s.subcategory || 'Central').filter(Boolean))];
 
   const filtered = allScholarships.filter(s => {
-    const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) ||
-      (s.nameBengali || '').includes(search) ||
-      s.eligibility.toLowerCase().includes(search.toLowerCase());
+    const name = s.name || s.title || '';
+    const eligibility = s.eligibility || '';
+    const matchSearch = name.toLowerCase().includes(search.toLowerCase()) ||
+      (s.nameLocal || '').includes(search) ||
+      eligibility.toLowerCase().includes(search.toLowerCase());
     const matchCat   = catFilter === 'All' || (s.subcategory || 'Central') === catFilter;
     const matchState = stateFilter === 'All' ||
-      (s._stateId === 'central' && stateFilter === 'Central') ||
-      states.find(st => st.id === s._stateId)?.name === stateFilter;
+      (s._stateId === 'central' && stateFilter === 'central') ||
+      s._stateId === stateFilter;
     return matchSearch && matchCat && matchState;
   });
 
@@ -53,11 +65,11 @@ export default function ScholarshipsPage() {
           <p className="text-blue-100">Central & State scholarships — merit-based, need-based, category-based</p>
           <div className="flex gap-4 mt-5 flex-wrap">
             <div className="bg-white/20 rounded-xl px-4 py-2 text-center">
-              <p className="text-xl font-bold">{centralScholarships.length}</p>
+              <p className="text-xl font-bold">{centralCount}</p>
               <p className="text-xs text-blue-100">Central</p>
             </div>
             <div className="bg-white/20 rounded-xl px-4 py-2 text-center">
-              <p className="text-xl font-bold">{allStateSchols.length}</p>
+              <p className="text-xl font-bold">{stateCount}</p>
               <p className="text-xs text-blue-100">State</p>
             </div>
             <div className="bg-white/20 rounded-xl px-4 py-2 text-center">
@@ -81,11 +93,9 @@ export default function ScholarshipsPage() {
             </select>
             <select value={stateFilter} onChange={e => setStateFilter(e.target.value)} className="form-input w-auto">
               <option value="All">All States</option>
-              <option value="Central">Central</option>
-              {Object.keys(stateScholarships).map(id => (
-                <option key={id} value={states.find(s => s.id === id)?.name || id}>
-                  {states.find(s => s.id === id)?.name || id}
-                </option>
+              <option value="central">Central</option>
+              {statesWithSchols.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -94,13 +104,13 @@ export default function ScholarshipsPage() {
         {filtered.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {filtered.map(s => (
-              <SchemeCard key={s.id} scheme={s} stateId={s._stateId} type="scheme" />
+              <SchemeCard key={s.id} scheme={s} stateId={s._stateId || 'central'} type="scheme" />
             ))}
           </div>
         ) : (
           <div className="text-center py-20 text-gray-400">
             <div className="text-5xl mb-4">🔍</div>
-            <p className="font-medium">No scholarships found for "{search}"</p>
+            <p className="font-medium">No scholarships found for &quot;{search}&quot;</p>
           </div>
         )}
       </div>

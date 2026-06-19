@@ -64,21 +64,22 @@ export default async function handler(req, res) {
     } = req.body;
 
     const updateData = {};
+    const orNull = (v) => v || null;
 
-    if (fullName !== undefined) updateData.fullName = fullName;
-    if (dob !== undefined) updateData.dob = dob || null;
-    if (gender !== undefined) updateData.gender = gender;
-    if (email !== undefined) updateData.email = email;
-    if (aadhaar !== undefined) updateData.aadhaar = aadhaar;
-    if (pan !== undefined) updateData.pan = pan;
-    if (category !== undefined) updateData.category = category;
-    if (education !== undefined) updateData.education = education;
-    if (address !== undefined) updateData.address = address;
-    if (state !== undefined) updateData.state = state;
-    if (district !== undefined) updateData.district = district;
-    if (bankAccount !== undefined) updateData.bankAccount = bankAccount;
-    if (ifsc !== undefined) updateData.ifsc = ifsc;
-    if (rationCard !== undefined) updateData.rationCard = rationCard;
+    if (fullName) updateData.fullName = fullName;
+    if (dob !== undefined) updateData.dob = orNull(dob);
+    if (gender !== undefined) updateData.gender = orNull(gender);
+    if (email !== undefined) updateData.email = orNull(email);
+    if (aadhaar !== undefined) updateData.aadhaar = orNull(aadhaar);
+    if (pan !== undefined) updateData.pan = orNull(pan);
+    if (category !== undefined) updateData.category = orNull(category);
+    if (education !== undefined) updateData.education = orNull(education);
+    if (address !== undefined) updateData.address = orNull(address);
+    if (state !== undefined) updateData.state = orNull(state);
+    if (district !== undefined) updateData.district = orNull(district);
+    if (bankAccount !== undefined) updateData.bankAccount = orNull(bankAccount);
+    if (ifsc !== undefined) updateData.ifsc = orNull(ifsc);
+    if (rationCard !== undefined) updateData.rationCard = orNull(rationCard);
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'No fields to update' });

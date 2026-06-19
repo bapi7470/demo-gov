@@ -20,15 +20,16 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    const session = {
+      username: admin.username,
+      stateId: admin.stateId,
+      stateName: admin.stateName,
+      emoji: admin.emoji,
+      level: admin.level,
+    };
     return res.status(200).json({
       success: true,
-      admin: {
-        username: admin.username,
-        stateId: admin.stateId,
-        stateName: admin.stateName,
-        emoji: admin.emoji,
-        level: admin.level,
-      },
+      session,
     });
   } catch (error) {
     console.error('Gov admin login error:', error);

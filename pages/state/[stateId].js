@@ -1,10 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { states, unionTerritories } from '../../data/states';
-import { getStateSchemesWithCentral } from '../../data/schemes';
-import { stateExams } from '../../data/exams';
-import { centralScholarships, stateScholarships } from '../../data/scholarships';
-import { centralTenders, stateTenders } from '../../data/tenders';
+import prisma from '../../lib/prisma';
 import SchemeCard from '../../components/SchemeCard';
 
 const STATUS_STYLES = {
@@ -16,73 +12,73 @@ const STATUS_STYLES = {
   'Rejected':             { bg: 'bg-red-50 border-red-200',       badge: 'bg-red-100 text-red-800',       icon: '❌' },
 };
 
-export default function StateSchemesPage() {
+export async function getServerSideProps({ params }) {
+  const { stateId } = params;
+
+  const stateData = await prisma.state.findUnique({ where: { id: stateId } });
+  if (!stateData) {
+    return { notFound: true };
+  }
+
+  const [
+    stateSchemes,
+    centralSchemes,
+    stateExams,
+    scholarships,
+    tenders,
+    customStateSchemes,
+  ] = await Promise.all([
+    prisma.scheme.findMany({ where: { stateId, scope: 'state' }, orderBy: { createdAt: 'asc' } }),
+    prisma.scheme.findMany({ where: { scope: 'central' }, orderBy: { createdAt: 'asc' } }),
+    prisma.exam.findMany({ where: { stateId }, orderBy: { createdAt: 'asc' } }),
+    prisma.scholarship.findMany({
+      where: { OR: [{ stateId }, { scope: 'central' }] },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.tender.findMany({
+      where: { OR: [{ stateId }, { stateId: 'central' }] },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.customScheme.findMany({ where: { stateId } }),
+  ]);
+
+  const customSchemeMapped = customStateSchemes.map(s => ({ ...s, name: s.title, isCustom: true }));
+
+  return {
+    props: JSON.parse(JSON.stringify({
+      stateData,
+      stateSchemes,
+      centralSchemes,
+      stateExams,
+      scholarships,
+      tenders,
+      customStateSchemes: customSchemeMapped,
+    })),
+  };
+}
+
+export default function StateSchemesPage({ stateData, stateSchemes, centralSchemes, stateExams, scholarships, tenders, customStateSchemes }) {
   const router = useRouter();
-  const { stateId } = router.query;
 
   const [activeTab, setActiveTab] = useState('state');
   const [searchQuery, setSearchQuery] = useState('');
   const [trackRef, setTrackRef] = useState('');
   const [trackResult, setTrackResult] = useState(null);
   const [trackError, setTrackError] = useState('');
-  const [customStateSchemes, setCustomStateSchemes] = useState([]);
-  const [customStateExams, setCustomStateExams] = useState([]);
 
-  useEffect(() => {
-    if (!stateId) return;
-    async function loadCustom() {
-      try {
-        const res = await fetch(`/api/schemes?stateId=${stateId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setCustomStateSchemes(data.schemes || []);
-          setCustomStateExams(data.exams || []);
-        }
-      } catch (_) {}
-    }
-    loadCustom();
-  }, [stateId]);
-
-  if (!stateId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const stateData = [...states, ...unionTerritories].find((s) => s.id === stateId);
-
-  if (!stateData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl mb-4">😕</div>
-          <h2 className="text-2xl font-bold text-gray-700 mb-2">State not found</h2>
-          <button onClick={() => router.push('/states')} className="btn-primary mt-4">← Back to States</button>
-        </div>
-      </div>
-    );
-  }
-
-  const { central: centralSchemes, state: stateSpecificSchemes } = getStateSchemesWithCentral(stateId);
-
-  // Custom overrides same-ID built-in items
+  // Custom overrides same-ID static schemes
   const customSchemeIds = new Set(customStateSchemes.map(s => s.id));
-  const customExamIds   = new Set(customStateExams.map(e => e.id));
-  const stateExamList   = [
-    ...(stateExams[stateId] || []).filter(e => !customExamIds.has(e.id)),
-    ...customStateExams,
+  const mergedStateSchemes = [
+    ...stateSchemes.filter(s => !customSchemeIds.has(s.id)),
+    ...customStateSchemes,
   ];
-  const scholarshipList = [...centralScholarships, ...(stateScholarships[stateId] || [])];
-  const tenderList      = [...centralTenders, ...(stateTenders[stateId] || [])];
 
   const tabs = [
-    { id: 'state',       label: '🏛️ State Schemes',    count: stateSpecificSchemes.length + customStateSchemes.length },
+    { id: 'state',       label: '🏛️ State Schemes',    count: mergedStateSchemes.length },
     { id: 'central',     label: '🇮🇳 Central Schemes',  count: centralSchemes.length },
-    { id: 'exams',       label: '📝 State Exams',       count: stateExamList.length },
-    { id: 'scholarship', label: '🎓 Scholarships',      count: scholarshipList.length },
-    { id: 'tender',      label: '📋 Tenders',           count: tenderList.length },
+    { id: 'exams',       label: '📝 State Exams',       count: stateExams.length },
+    { id: 'scholarship', label: '🎓 Scholarships',      count: scholarships.length },
+    { id: 'tender',      label: '📋 Tenders',           count: tenders.length },
     { id: 'track',       label: '🔍 Track Application', count: null },
   ];
 
@@ -103,24 +99,20 @@ export default function StateSchemesPage() {
     } catch { setTrackError('Error searching. Please try again.'); }
   };
 
-  // Custom overrides same-ID static schemes
-  const mergedStateSchemes = [
-    ...stateSpecificSchemes.filter(s => !customSchemeIds.has(s.id)),
-    ...customStateSchemes,
-  ];
-
   const currentItems =
     activeTab === 'state'       ? mergedStateSchemes :
     activeTab === 'central'     ? centralSchemes :
-    activeTab === 'exams'       ? stateExamList :
-    activeTab === 'scholarship' ? scholarshipList :
-    activeTab === 'tender'      ? tenderList :
+    activeTab === 'exams'       ? stateExams :
+    activeTab === 'scholarship' ? scholarships :
+    activeTab === 'tender'      ? tenders :
     [];
 
-  const filtered = currentItems.filter((s) =>
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filtered = currentItems.filter((s) => {
+    const name = s.name || s.title || '';
+    const category = s.category || '';
+    return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      category.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -141,13 +133,13 @@ export default function StateSchemesPage() {
               <p className="text-white/80 mt-1">Capital: {stateData.capital} · Region: {stateData.region}</p>
               <div className="flex gap-3 mt-3 flex-wrap">
                 <span className="bg-white/20 backdrop-blur text-sm px-3 py-1 rounded-full">
-                  {stateSpecificSchemes.length} State Schemes
+                  {mergedStateSchemes.length} State Schemes
                 </span>
                 <span className="bg-white/20 backdrop-blur text-sm px-3 py-1 rounded-full">
                   {centralSchemes.length} Central Schemes
                 </span>
                 <span className="bg-white/20 backdrop-blur text-sm px-3 py-1 rounded-full">
-                  {stateExamList.length} State Exams
+                  {stateExams.length} State Exams
                 </span>
               </div>
             </div>
@@ -191,7 +183,7 @@ export default function StateSchemesPage() {
           )}
         </div>
 
-        {activeTab === 'state' && stateSpecificSchemes.length === 0 && (
+        {activeTab === 'state' && mergedStateSchemes.length === 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center mb-8">
             <div className="text-4xl mb-3">🔄</div>
             <h3 className="font-bold text-amber-800 mb-2">State-specific schemes coming soon</h3>
@@ -211,7 +203,7 @@ export default function StateSchemesPage() {
                 <SchemeCard
                   key={item.id}
                   scheme={item}
-                  stateId={activeTab === 'central' ? 'central' : stateId}
+                  stateId={activeTab === 'central' ? 'central' : stateData.id}
                   type={activeTab === 'exams' ? 'exam' : 'scheme'}
                 />
               ))}
@@ -219,7 +211,7 @@ export default function StateSchemesPage() {
           ) : searchQuery ? (
             <div className="text-center py-20 text-gray-500">
               <div className="text-5xl mb-4">🔍</div>
-              <p className="font-medium">No results for "{searchQuery}"</p>
+              <p className="font-medium">No results for &quot;{searchQuery}&quot;</p>
             </div>
           ) : null
         )}

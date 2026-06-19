@@ -1,12 +1,21 @@
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
 import { useEffect } from 'react';
-import { centralSchemes } from '../data/schemes';
-import { centralExams } from '../data/exams';
+import prisma from '../lib/prisma';
 import SchemeCard from '../components/SchemeCard';
 import { useApp } from '../context/AppContext';
 
-export default function Home() {
+const toJson = (arr) => arr.map(r => ({ ...r, createdAt: r.createdAt?.toISOString() ?? null }));
+
+export async function getServerSideProps() {
+  const [featuredSchemes, featuredExams] = await Promise.all([
+    prisma.scheme.findMany({ where: { scope: 'central' }, orderBy: { createdAt: 'asc' }, take: 3 }),
+    prisma.exam.findMany({ where: { scope: 'central' }, orderBy: { createdAt: 'asc' }, take: 3 }),
+  ]);
+  return { props: { featuredSchemes: toJson(featuredSchemes), featuredExams: toJson(featuredExams) } };
+}
+
+export default function Home({ featuredSchemes, featuredExams }) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const { getAllBeneficiaries } = useApp();
@@ -20,9 +29,6 @@ export default function Home() {
   if (!session && status !== 'loading') return null;
 
   const totalBeneficiaries = Object.keys(getAllBeneficiaries()).length;
-
-  const featuredSchemes = centralSchemes.slice(0, 3);
-  const featuredExams = centralExams.slice(0, 3);
 
   return (
     <div className="min-h-screen">

@@ -1,20 +1,45 @@
 import { useState } from 'react';
-import { states, unionTerritories } from '../data/states';
-import { govEmployees, sectorIcons, sectorColors } from '../data/govData';
+import prisma from '../lib/prisma';
 
-const allStates = [...states, ...unionTerritories];
-const statesWithData = Object.keys(govEmployees);
+export async function getServerSideProps() {
+  const [employees, allStates, sectors] = await Promise.all([
+    prisma.govEmployee.findMany({ orderBy: { name: 'asc' } }),
+    prisma.state.findMany({ orderBy: { name: 'asc' } }),
+    prisma.govSector.findMany(),
+  ]);
 
-export default function JobDirectoryPage() {
+  // Group employees by stateId for client-side use
+  const govEmployeesByState = {};
+  for (const emp of employees) {
+    if (!govEmployeesByState[emp.stateId]) govEmployeesByState[emp.stateId] = [];
+    govEmployeesByState[emp.stateId].push(emp);
+  }
+
+  const sectorIcons = Object.fromEntries(sectors.map(s => [s.name, s.icon || '💼']));
+  const sectorColors = Object.fromEntries(sectors.map(s => [s.name, s.color || 'from-gray-500 to-gray-700']));
+
+  return {
+    props: JSON.parse(JSON.stringify({
+      govEmployeesByState,
+      allStates,
+      statesWithData: Object.keys(govEmployeesByState),
+      totalEmployees: employees.length,
+      totalSectors: [...new Set(employees.map(e => e.sector))].length,
+      sectorIcons,
+      sectorColors,
+    })),
+  };
+}
+
+export default function JobDirectoryPage({ govEmployeesByState, allStates, statesWithData, totalEmployees, totalSectors, sectorIcons, sectorColors }) {
   const [selectedState, setSelectedState] = useState(null);
   const [selectedSector, setSelectedSector] = useState(null);
   const [search, setSearch] = useState('');
 
   const stateData = selectedState ? allStates.find((s) => s.id === selectedState) : null;
 
-  // Get sectors for selected state with employee counts
   const getSectorsForState = (stateId) => {
-    const emps = govEmployees[stateId] || [];
+    const emps = govEmployeesByState[stateId] || [];
     const sectorMap = {};
     emps.forEach((e) => {
       if (!sectorMap[e.sector]) sectorMap[e.sector] = [];
@@ -23,10 +48,9 @@ export default function JobDirectoryPage() {
     return sectorMap;
   };
 
-  // Get employees for selected state + sector
   const getEmployees = () => {
     if (!selectedState || !selectedSector) return [];
-    return (govEmployees[selectedState] || []).filter(
+    return (govEmployeesByState[selectedState] || []).filter(
       (e) => e.sector === selectedSector
     );
   };
@@ -35,7 +59,7 @@ export default function JobDirectoryPage() {
     e.name.toLowerCase().includes(search.toLowerCase()) ||
     e.designation.toLowerCase().includes(search.toLowerCase()) ||
     e.department.toLowerCase().includes(search.toLowerCase()) ||
-    e.district.toLowerCase().includes(search.toLowerCase())
+    (e.district || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const sectorsForState = selectedState ? getSectorsForState(selectedState) : {};
@@ -46,7 +70,6 @@ export default function JobDirectoryPage() {
     return 'bg-gray-100 text-gray-600';
   };
 
-  // Level indicator
   const level = !selectedState ? 'states' : !selectedSector ? 'sectors' : 'employees';
 
   return (
@@ -64,11 +87,11 @@ export default function JobDirectoryPage() {
               <p className="text-xs text-slate-300">States Listed</p>
             </div>
             <div className="bg-white/10 rounded-xl px-4 py-2 text-center">
-              <p className="text-xl font-bold">{Object.values(govEmployees).flat().length}</p>
+              <p className="text-xl font-bold">{totalEmployees}</p>
               <p className="text-xs text-slate-300">Employees</p>
             </div>
             <div className="bg-white/10 rounded-xl px-4 py-2 text-center">
-              <p className="text-xl font-bold">{[...new Set(Object.values(govEmployees).flat().map(e => e.sector))].length}</p>
+              <p className="text-xl font-bold">{totalSectors}</p>
               <p className="text-xs text-slate-300">Sectors</p>
             </div>
           </div>
@@ -124,7 +147,7 @@ export default function JobDirectoryPage() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-8">
               {allStates.filter(s => statesWithData.includes(s.id)).map((state) => {
-                const empCount = (govEmployees[state.id] || []).length;
+                const empCount = (govEmployeesByState[state.id] || []).length;
                 const sectorCount = Object.keys(getSectorsForState(state.id)).length;
                 return (
                   <div
@@ -183,7 +206,7 @@ export default function JobDirectoryPage() {
                 </h2>
               </div>
               <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
-                {Object.keys(sectorsForState).length} sectors · {(govEmployees[selectedState] || []).length} employees
+                {Object.keys(sectorsForState).length} sectors · {(govEmployeesByState[selectedState] || []).length} employees
               </span>
             </div>
 
@@ -290,7 +313,7 @@ export default function JobDirectoryPage() {
                       </div>
                       <div className="flex items-center gap-2 text-xs text-gray-600">
                         <span>📅</span>
-                        <span>Joined {new Date(emp.joiningDate).getFullYear()}</span>
+                        <span>Joined {emp.joiningDate ? new Date(emp.joiningDate).getFullYear() : 'N/A'}</span>
                       </div>
                     </div>
 

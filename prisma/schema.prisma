@@ -8,26 +8,25 @@ datasource db {
 }
 
 model User {
-  id               String   @id @default(cuid())
-  fullName         String
-  dob              String?
-  gender           String?
-  mobile           String   @unique
-  password         String
-  email            String?
-  aadhaar          String?  @unique
-  pan              String?
-  category         String?
-  education        String?
-  address          String?
-  state            String?
-  district         String?
-  bankAccount      String?
-  ifsc             String?
-  rationCard       String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
+  id           String        @id @default(cuid())
+  fullName     String
+  dob          String?
+  gender       String?
+  mobile       String        @unique
+  password     String
+  email        String?
+  aadhaar      String?       @unique
+  pan          String?
+  category     String?
+  education    String?
+  address      String?
+  state        String?
+  district     String?
+  bankAccount  String?
+  ifsc         String?
+  rationCard   String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   applications Application[]
 }
 
@@ -42,8 +41,7 @@ model Application {
   formData      Json     @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-
-  user User? @relation(fields: [userId], references: [id])
+  user          User?    @relation(fields: [userId], references: [id])
 }
 
 model CustomScheme {
@@ -147,9 +145,71 @@ model CustomTender {
   @@index([stateId])
 }
 
+model State {
+  id      String  @id
+  name    String
+  capital String?
+  region  String?
+  color   String?
+  emoji   String?
+  schemes Int     @default(0)
+  type    String  @default("state")
+}
+
+model District {
+  id      String @id @default(cuid())
+  stateId String
+  name    String
+
+  @@index([stateId])
+}
+
+model GovSector {
+  name  String  @id
+  icon  String?
+  color String?
+}
+
+model GovEmployee {
+  id          String  @id
+  stateId     String
+  name        String
+  designation String?
+  department  String?
+  sector      String?
+  salary      Int?
+  joiningDate String?
+  pan         String? @unique
+  district    String?
+  grade       String?
+  serviceType String?
+
+  @@index([stateId])
+}
+
+model PrivateOrg {
+  id            String  @id
+  name          String
+  shortName     String?
+  gst           String?
+  sector        String?
+  stateId       String?
+  stateName     String?
+  district      String?
+  city          String?
+  employees     Int?
+  founded       Int?
+  icon          String?
+  color         String?
+  adminPassword String?
+  description   String?
+
+  @@index([stateId])
+}
+
 model Scheme {
   id          String   @id
-  stateId     String
+  stateId     String?
   name        String
   nameHindi   String?
   ministry    String?
@@ -161,13 +221,20 @@ model Scheme {
   documents   Json     @default("[]")
   formFields  Json     @default("[]")
   createdAt   DateTime @default(now())
+  badgeColor  String?
+  color       String?
+  extra       Json?
+  hasPanLogic Boolean  @default(false)
+  nameLocal   String?
+  scope       String   @default("state")
 
+  @@index([scope])
   @@index([stateId])
 }
 
 model Exam {
   id                  String   @id
-  stateId             String
+  stateId             String?
   name                String
   shortName           String?
   conductedBy         String?
@@ -182,13 +249,17 @@ model Exam {
   description         String?
   formFields          Json     @default("[]")
   createdAt           DateTime @default(now())
+  badgeColor          String?
+  color               String?
+  scope               String   @default("state")
 
+  @@index([scope])
   @@index([stateId])
 }
 
 model Scholarship {
   id          String   @id
-  stateId     String
+  stateId     String?
   name        String
   nameHindi   String?
   ministry    String?
@@ -201,7 +272,12 @@ model Scholarship {
   documents   Json     @default("[]")
   formFields  Json     @default("[]")
   createdAt   DateTime @default(now())
+  badgeColor  String?
+  color       String?
+  nameLocal   String?
+  scope       String   @default("state")
 
+  @@index([scope])
   @@index([stateId])
 }
 

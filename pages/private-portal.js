@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { privateOrgs, orgSectors } from '../data/privateOrgs';
+import prisma from '../lib/prisma';
 import { useApp } from '../context/AppContext';
 
-export default function PrivatePortalPage() {
+export async function getServerSideProps() {
+  const privateOrgs = await prisma.privateOrg.findMany({ orderBy: { name: 'asc' } });
+  const orgSectors = ['All Sectors', ...new Set(privateOrgs.map(o => o.sector).filter(Boolean))];
+  return { props: JSON.parse(JSON.stringify({ privateOrgs, orgSectors })) };
+}
+
+export default function PrivatePortalPage({ privateOrgs, orgSectors }) {
   const router = useRouter();
   const { getCompanyEmployees } = useApp();
   const [search, setSearch] = useState('');

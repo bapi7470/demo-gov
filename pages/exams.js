@@ -1,63 +1,68 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { centralExams, stateExams } from '../data/exams';
-import { states, unionTerritories } from '../data/states';
+import prisma from '../lib/prisma';
 import SchemeCard from '../components/SchemeCard';
 
-const statesWithExams = Object.keys(stateExams);
+export async function getServerSideProps() {
+  const [centralExams, statesWithExams, allStates] = await Promise.all([
+    prisma.exam.findMany({ where: { scope: 'central' }, orderBy: { createdAt: 'asc' } }),
+    prisma.exam.findMany({
+      where: { scope: 'state' },
+      select: { stateId: true },
+      distinct: ['stateId'],
+    }),
+    prisma.state.findMany({ orderBy: { name: 'asc' } }),
+  ]);
+  const stateIdsWithExams = statesWithExams.map(e => e.stateId).filter(Boolean);
+  const statesData = allStates.filter(s => stateIdsWithExams.includes(s.id));
+  return {
+    props: JSON.parse(JSON.stringify({
+      centralExams,
+      statesData,
+      stateIdsWithExams,
+      totalStateExams: await prisma.exam.count({ where: { scope: 'state' } }),
+      allStates,
+    })),
+  };
+}
 
-export default function ExamsPage() {
+export default function ExamsPage({ centralExams, statesData, stateIdsWithExams, totalStateExams, allStates }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('central');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [selectedState, setSelectedState] = useState(null);
-  const [customExams, setCustomExams] = useState([]);
+  const [stateExams, setStateExams] = useState([]);
+  const [loadingState, setLoadingState] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/schemes?type=custom_exams');
-        if (res.ok) {
-          const data = await res.json();
-          setCustomExams(data.exams || []);
-        }
-      } catch (_) {}
-    }
-    load();
-  }, []);
+    if (!selectedState) { setStateExams([]); return; }
+    setLoadingState(true);
+    fetch(`/api/exams?stateId=${selectedState}`)
+      .then(r => r.json())
+      .then(data => { setStateExams(Array.isArray(data) ? data : []); setLoadingState(false); })
+      .catch(() => setLoadingState(false));
+  }, [selectedState]);
 
-  // Custom overrides same-ID built-in exams
-  const customExamIds   = new Set(customExams.map(e => e.id));
-  const allCentralExams = [
-    ...centralExams.filter(e => !customExamIds.has(e.id)),
-    ...customExams,
-  ];
-  const categories = ['All', ...new Set(allCentralExams.map((e) => e.category))];
+  const categories = ['All', ...new Set(centralExams.map((e) => e.category).filter(Boolean))];
 
-  const allStatesData = [...states, ...unionTerritories].filter((s) =>
-    statesWithExams.includes(s.id)
-  );
-
-  const filteredCentral = allCentralExams.filter((e) => {
+  const filteredCentral = centralExams.filter((e) => {
     const matchSearch =
       e.name.toLowerCase().includes(search.toLowerCase()) ||
-      e.conductedBy.toLowerCase().includes(search.toLowerCase()) ||
-      e.category.toLowerCase().includes(search.toLowerCase());
+      (e.conductedBy || '').toLowerCase().includes(search.toLowerCase()) ||
+      (e.category || '').toLowerCase().includes(search.toLowerCase());
     const matchCat = categoryFilter === 'All' || e.category === categoryFilter;
     return matchSearch && matchCat;
   });
 
-  const filteredStateExams = selectedState
-    ? (stateExams[selectedState] || []).filter((e) =>
-        e.name.toLowerCase().includes(search.toLowerCase()) ||
-        e.category.toLowerCase().includes(search.toLowerCase()) ||
-        e.conductedBy.toLowerCase().includes(search.toLowerCase())
-      )
-    : [];
+  const filteredStateExams = stateExams.filter((e) =>
+    e.name.toLowerCase().includes(search.toLowerCase()) ||
+    (e.category || '').toLowerCase().includes(search.toLowerCase()) ||
+    (e.conductedBy || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   const selectedStateData = selectedState
-    ? [...states, ...unionTerritories].find((s) => s.id === selectedState)
+    ? allStates.find((s) => s.id === selectedState)
     : null;
 
   return (
@@ -74,11 +79,11 @@ export default function ExamsPage() {
               <p className="text-xs text-blue-100">Central Exams</p>
             </div>
             <div className="bg-white/20 rounded-xl px-4 py-2 text-center">
-              <p className="text-xl font-bold">{statesWithExams.length}</p>
+              <p className="text-xl font-bold">{stateIdsWithExams.length}</p>
               <p className="text-xs text-blue-100">States with Exams</p>
             </div>
             <div className="bg-white/20 rounded-xl px-4 py-2 text-center">
-              <p className="text-xl font-bold">{Object.values(stateExams).flat().length}</p>
+              <p className="text-xl font-bold">{totalStateExams}</p>
               <p className="text-xs text-blue-100">State Exams</p>
             </div>
           </div>
@@ -108,7 +113,7 @@ export default function ExamsPage() {
             >
               🗺️ State Exams
               <span className={`badge ${activeTab === 'state' ? 'bg-blue-100 text-blue-700' : 'bg-gray-300 text-gray-600'}`}>
-                {statesWithExams.length} States
+                {stateIdsWithExams.length} States
               </span>
             </button>
           </div>
@@ -153,7 +158,7 @@ export default function ExamsPage() {
             ) : (
               <div className="text-center py-20 text-gray-400">
                 <div className="text-5xl mb-4">🔍</div>
-                <p className="font-medium">No exams found for "{search}"</p>
+                <p className="font-medium">No exams found for &quot;{search}&quot;</p>
               </div>
             )}
           </>
@@ -168,37 +173,34 @@ export default function ExamsPage() {
                   Select a state to view its competitive exams — PSC, Police, Teacher recruitment and more.
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {allStatesData.map((state) => {
-                    const examCount = stateExams[state.id]?.length || 0;
-                    return (
-                      <div
-                        key={state.id}
-                        onClick={() => setSelectedState(state.id)}
-                        className="card-hover bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 cursor-pointer"
-                      >
-                        <div className={`bg-gradient-to-br ${state.color} h-24 flex flex-col items-center justify-center`}>
-                          <span className="text-4xl">{state.emoji}</span>
-                        </div>
-                        <div className="p-3">
-                          <h3 className="font-bold text-gray-800 text-sm leading-tight mb-0.5">{state.name}</h3>
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex items-center gap-1">
-                              <span className="w-2 h-2 bg-blue-500 rounded-full" />
-                              <span className="text-xs text-gray-500">{examCount} Exams</span>
-                            </div>
-                            <span className="text-blue-500 text-xs font-semibold">View →</span>
+                  {statesData.map((state) => (
+                    <div
+                      key={state.id}
+                      onClick={() => setSelectedState(state.id)}
+                      className="card-hover bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 cursor-pointer"
+                    >
+                      <div className={`bg-gradient-to-br ${state.color} h-24 flex flex-col items-center justify-center`}>
+                        <span className="text-4xl">{state.emoji}</span>
+                      </div>
+                      <div className="p-3">
+                        <h3 className="font-bold text-gray-800 text-sm leading-tight mb-0.5">{state.name}</h3>
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center gap-1">
+                            <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                            <span className="text-xs text-gray-500">Exams</span>
                           </div>
+                          <span className="text-blue-500 text-xs font-semibold">View →</span>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="mt-8 bg-blue-50 border border-blue-100 rounded-2xl p-5">
                   <h3 className="font-bold text-blue-800 mb-2">📌 More States Coming Soon</h3>
                   <div className="flex flex-wrap gap-2">
-                    {states
-                      .filter((s) => !statesWithExams.includes(s.id))
+                    {allStates
+                      .filter((s) => !stateIdsWithExams.includes(s.id))
                       .map((s) => (
                         <span key={s.id} className="bg-white border border-blue-100 text-gray-500 text-xs px-2.5 py-1 rounded-full">
                           {s.emoji} {s.name}
@@ -227,7 +229,11 @@ export default function ExamsPage() {
                   )}
                 </div>
 
-                {filteredStateExams.length > 0 ? (
+                {loadingState ? (
+                  <div className="text-center py-20">
+                    <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  </div>
+                ) : filteredStateExams.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {filteredStateExams.map((exam) => (
                       <SchemeCard key={exam.id} scheme={exam} stateId={selectedState} type="exam" />

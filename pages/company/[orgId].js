@@ -1,17 +1,27 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { privateOrgs } from '../../data/privateOrgs';
+import prisma from '../../lib/prisma';
 import { useApp } from '../../context/AppContext';
+
+export async function getServerSideProps({ params }) {
+  const { orgId } = params;
+  // First look in PrivateOrg (seeded static orgs), then CustomCompany isn't a Prisma model
+  // privateOrgs are stored in PrivateOrg table; custom companies are runtime-only (no Prisma model)
+  const org = await prisma.privateOrg.findUnique({ where: { id: orgId } });
+  if (!org) {
+    return { props: { org: null } };
+  }
+  return { props: JSON.parse(JSON.stringify({ org })) };
+}
 
 const DESIGNATIONS = ['Software Engineer', 'Senior Engineer', 'Manager', 'Senior Manager', 'Director', 'VP', 'Analyst', 'Consultant', 'Executive', 'Associate', 'Team Lead', 'Project Manager', 'HR Executive', 'Finance Officer', 'Operations Manager'];
 const DEPARTMENTS = ['Engineering', 'Product', 'Sales', 'Marketing', 'HR', 'Finance', 'Operations', 'Legal', 'Admin', 'Customer Support'];
 
-export default function CompanyDashboard() {
+export default function CompanyDashboard({ org }) {
   const router = useRouter();
   const { orgId } = router.query;
   const { getCompanyEmployees, addCompanyEmployee, removeCompanyEmployee, getBeneficiaryByPan } = useApp();
 
-  const org = privateOrgs.find((o) => o.id === orgId);
   const employees = orgId ? getCompanyEmployees(orgId) : [];
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -21,15 +31,6 @@ export default function CompanyDashboard() {
   const [removeConfirm, setRemoveConfirm] = useState(null);
   const [actionLog, setActionLog] = useState([]);
   const [search, setSearch] = useState('');
-
-  // While orgId is not yet available from router (SSR hydration)
-  if (!orgId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-4xl animate-spin">⏳</div>
-      </div>
-    );
-  }
 
   if (!org) {
     return (
