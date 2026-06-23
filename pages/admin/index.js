@@ -211,7 +211,7 @@ function FormBuilder({ type, stateId, stateName, onBack, onPublished, editItem =
   const publish = async () => {
     const e = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
-    if (fields.length === 0) { alert('Please add at least one form field before publishing.'); return; }
+    if (!isEditing && fields.length === 0) { alert('Please add at least one form field before publishing.'); return; }
 
     const colorObj = COLORS[details.colorIdx];
     const cleanFields = fields.map(({ _id, options, ...f }) => ({

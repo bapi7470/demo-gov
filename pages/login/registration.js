@@ -243,13 +243,23 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <label className="form-label">District <span className="text-red-500">*</span></label>
-                  <select value={reg.district}
-                    onChange={e => { setReg(p => ({ ...p, district: e.target.value })); setRegErrors(p => ({ ...p, district: '' })); }}
-                    className={`form-input ${regErrors.district ? 'border-red-400' : ''}`}
-                    disabled={!reg.state}>
-                    <option value="">{reg.state ? '-- Select District --' : '-- Select State First --'}</option>
-                    {(districtsByState[STATE_KEY_MAP[reg.state]] || []).map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+                  {(() => {
+                    const dList = reg.state ? (districtsByState[STATE_KEY_MAP[reg.state]] || []) : [];
+                    return dList.length > 0 ? (
+                      <select value={reg.district}
+                        onChange={e => { setReg(p => ({ ...p, district: e.target.value })); setRegErrors(p => ({ ...p, district: '' })); }}
+                        className={`form-input ${regErrors.district ? 'border-red-400' : ''}`}>
+                        <option value="">-- Select District --</option>
+                        {dList.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    ) : (
+                      <input type="text" value={reg.district}
+                        onChange={e => { setReg(p => ({ ...p, district: e.target.value })); setRegErrors(p => ({ ...p, district: '' })); }}
+                        placeholder={reg.state ? 'Enter district name' : 'Select state first'}
+                        disabled={!reg.state}
+                        className={`form-input ${regErrors.district ? 'border-red-400' : ''}`} />
+                    );
+                  })()}
                   {regErrors.district && <p className="text-red-500 text-xs mt-1">⚠ {regErrors.district}</p>}
                 </div>
                 {field('bankAccount', 'Bank Account Number', 'text', { optional: true, placeholder: 'Optional' })}
