@@ -43,27 +43,16 @@ export function AppProvider({ children }) {
 
   const fetchAllData = useCallback(async () => {
     try {
-      const [benRes, _] = await Promise.allSettled([
-        fetch('/api/beneficiaries'),
-      ]);
-
-      if (benRes.status === 'fulfilled' && benRes.value.ok) {
-        const data = await benRes.value.json();
-        const byPan = {};
-        if (Array.isArray(data)) {
-          data.forEach((b) => {
-            if (b.pan) byPan[b.pan] = b;
-          });
-        } else if (data && typeof data === 'object') {
-          Object.assign(byPan, data);
-        }
-
-        if (Object.keys(byPan).length === 0) {
-          await seedDefaults();
-        } else {
-          setBeneficiaries(byPan);
-        }
+      const res = await fetch('/api/beneficiaries');
+      if (!res.ok) return;
+      const data = await res.json();
+      const byPan = {};
+      if (Array.isArray(data)) {
+        data.forEach((b) => { if (b.pan) byPan[b.pan] = b; });
+      } else if (data && typeof data === 'object') {
+        Object.assign(byPan, data);
       }
+      setBeneficiaries(byPan);
     } catch (err) {
       console.error('[AppContext] Failed to fetch beneficiaries:', err);
     }

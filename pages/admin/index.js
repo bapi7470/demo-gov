@@ -164,7 +164,7 @@ function FormBuilder({ type, stateId, stateName, onBack, onPublished, editItem =
   const getInitialDetails = () => {
     if (editItem) {
       const { id, stateId: sid, stateName: sn, color, badgeColor, formFields, publishedAt, isCustom, documents, ...rest } = editItem;
-      return { ...rest, documents: Array.isArray(documents) ? documents.join(', ') : (documents || '') };
+      return { ...rest, colorIdx: rest.colorIdx ?? 0, documents: Array.isArray(documents) ? documents.join(', ') : (documents || '') };
     }
     if (isScholarship) return blankScholarship();
     if (isTender)      return blankTender();
@@ -213,7 +213,7 @@ function FormBuilder({ type, stateId, stateName, onBack, onPublished, editItem =
     if (Object.keys(e).length) { setErrors(e); return; }
     if (!isEditing && fields.length === 0) { alert('Please add at least one form field before publishing.'); return; }
 
-    const colorObj = COLORS[details.colorIdx];
+    const colorObj = COLORS[details.colorIdx] || COLORS[0];
     const cleanFields = fields.map(({ _id, options, ...f }) => ({
       ...f,
       options: f.type === 'select' ? options.split(',').map(o => o.trim()).filter(Boolean) : undefined,
@@ -249,7 +249,7 @@ function FormBuilder({ type, stateId, stateName, onBack, onPublished, editItem =
     onPublished(item, type);
   };
 
-  const colorObj = COLORS[details.colorIdx];
+  const colorObj = COLORS[details.colorIdx] || COLORS[0];
 
   return (
     <div className="space-y-6">
