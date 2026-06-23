@@ -12,13 +12,26 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { stateId, district, role, name, mobile, email, password } = req.body
-    const districtRole = await prisma.districtRole.upsert({
-      where: { stateId_district_role: { stateId, district, role } },
-      update: { name, mobile, email, password },
-      create: { stateId, district, role, name, mobile, email, password },
-    })
-    return res.status(200).json(districtRole)
+    try {
+      const { id, stateId, district, role, fullName, name, username, mobile, email, password } = req.body
+      const resolvedName = fullName || name || ''
+      if (id) {
+        const districtRole = await prisma.districtRole.upsert({
+          where: { id },
+          create: { id, stateId, district, role, name: resolvedName, mobile, email, password },
+          update: { name: resolvedName, mobile, email, ...(password ? { password } : {}) },
+        })
+        return res.status(200).json(districtRole)
+      } else {
+        const districtRole = await prisma.districtRole.create({
+          data: { stateId, district, role, name: resolvedName, mobile, email, password },
+        })
+        return res.status(200).json(districtRole)
+      }
+    } catch (error) {
+      console.error('District role error:', error)
+      return res.status(500).json({ error: 'Failed to save district role', details: error.message })
+    }
   }
 
   if (req.method === 'DELETE') {

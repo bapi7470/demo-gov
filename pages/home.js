@@ -81,8 +81,17 @@ export default function Home({ featuredSchemes, featuredExams }) {
 
       {/* Quick Access */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-5">
           {[
+            {
+              icon: '📋',
+              title: 'Register Now',
+              desc: 'Create your account to apply for government schemes and benefits',
+              color: 'from-orange-500 to-red-500',
+              action: () => router.push('/login/registration'),
+              cta: 'Register Now',
+              badge: '✨ New',
+            },
             {
               icon: '🗺️',
               title: 'State Schemes',

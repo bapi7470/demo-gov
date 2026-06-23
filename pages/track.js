@@ -11,8 +11,10 @@ export async function getServerSideProps() {
 }
 
 const STATUS_CONFIG = {
+  'Submitted':            { bg: 'bg-blue-50 border-blue-300',     badge: 'bg-blue-100 text-blue-800',    dot: 'bg-blue-500',    icon: '✅', msg: 'Your application has been received and is awaiting review.' },
   'Under Review':         { bg: 'bg-yellow-50 border-yellow-300', badge: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500', icon: '🔍', msg: 'Your application is currently under review. Documents are being verified.' },
   'Application Received': { bg: 'bg-blue-50 border-blue-300',    badge: 'bg-blue-100 text-blue-800',    dot: 'bg-blue-500',   icon: '✅', msg: 'Your application has been received and is awaiting review.' },
+  'PENDING':              { bg: 'bg-gray-50 border-gray-300',     badge: 'bg-gray-100 text-gray-700',    dot: 'bg-gray-400',   icon: '⏳', msg: 'Your application is pending processing.' },
   'Documents Pending':    { bg: 'bg-orange-50 border-orange-300', badge: 'bg-orange-100 text-orange-800', dot: 'bg-orange-500', icon: '📎', msg: 'Additional documents are required. Please submit them to proceed.' },
   'Approved':             { bg: 'bg-green-50 border-green-300',   badge: 'bg-green-100 text-green-800',  dot: 'bg-green-500',  icon: '🎉', msg: 'Congratulations! Your application has been approved. Benefits will be credited shortly.' },
   'Rejected':             { bg: 'bg-red-50 border-red-300',       badge: 'bg-red-100 text-red-800',     dot: 'bg-red-500',    icon: '❌', msg: 'Your application has been rejected.' },
@@ -280,7 +282,13 @@ export default function TrackApplicationPage({ states, unionTerritories }) {
 
         {/* STEP 4 — Result */}
         {step === 'result' && result && (() => {
-          const cfg = STATUS_CONFIG[result.status] || STATUS_CONFIG['Under Review'];
+          const cfg = STATUS_CONFIG[result.status] || STATUS_CONFIG['Submitted'];
+          const fd = result.formData || {};
+          const applicantName = fd.fullName || fd.applicantName || fd.name || result.applicantName || '';
+          const mobile        = fd.mobile || result.mobile || '';
+          const district      = fd.district || result.district || '';
+          const stateName     = fd.stateName || result.stateName || '';
+          const submittedAt   = result.createdAt || result.submittedAt;
           return (
             <div className="max-w-lg mx-auto">
               <div className="flex items-center gap-3 mb-6">
@@ -318,11 +326,11 @@ export default function TrackApplicationPage({ states, unionTerritories }) {
                   {[
                     ['Reference Number', result.refNo],
                     ['Scheme / Exam',    result.schemeName],
-                    ['Applicant',        result.applicantName],
-                    ['Mobile',           result.mobile],
-                    ['District',         result.district],
-                    ['State',            result.stateName],
-                    ['Submitted On',     new Date(result.submittedAt).toLocaleDateString('en-IN', {day:'numeric',month:'long',year:'numeric'})],
+                    ['Applicant',        applicantName],
+                    ['Mobile',           mobile],
+                    ['District',         district],
+                    ['State',            stateName],
+                    ['Submitted On',     submittedAt ? new Date(submittedAt).toLocaleDateString('en-IN', {day:'numeric',month:'long',year:'numeric'}) : ''],
                   ].map(([k,v]) => v && v !== '—' && (
                     <div key={k} className="flex justify-between items-center py-1.5 border-b border-gray-100 last:border-0">
                       <span className="text-xs text-gray-500 font-medium">{k}</span>

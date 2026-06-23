@@ -74,12 +74,6 @@ export default function PublicLoginPage() {
               </button>
             </form>
 
-            <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700">
-              <p className="font-semibold mb-1">Demo accounts:</p>
-              <p>Mobile: <code>9800000001</code> | Password: <code>demo123</code></p>
-              <p>Mobile: <code>9800000002</code> | Password: <code>demo456</code></p>
-            </div>
-
             <p className="text-center text-sm text-gray-500">
               Don't have an account?{' '}
               <button onClick={() => router.push('/login/registration')}
