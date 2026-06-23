@@ -87,6 +87,13 @@ export default function RegisterPage() {
     }
   };
 
+  const validateOnChange = (name, value) => {
+    if (name === 'mobile')   return value.length > 0 && value.length !== 10 ? 'Enter a valid 10-digit mobile number' : '';
+    if (name === 'aadhaar')  return value.length > 0 && value.length !== 12 ? 'Enter a valid 12-digit Aadhaar number' : '';
+    if (name === 'password') return value.length > 0 && value.length < 6    ? 'Password must be at least 6 characters' : '';
+    return '';
+  };
+
   const field = (name, label, type = 'text', opts = {}) => (
     <div className={opts.full ? 'sm:col-span-2' : ''}>
       <label className="form-label">{label} {!opts.optional && <span className="text-red-500">*</span>}</label>
@@ -99,7 +106,11 @@ export default function RegisterPage() {
         </select>
       ) : (
         <input type={type} value={reg[name]} placeholder={opts.placeholder}
-          onChange={e => { setReg(p => ({ ...p, [name]: e.target.value })); setRegErrors(p => ({ ...p, [name]: '' })); }}
+          onChange={e => {
+            const val = e.target.value;
+            setReg(p => ({ ...p, [name]: val }));
+            setRegErrors(p => ({ ...p, [name]: validateOnChange(name, val) }));
+          }}
           className={`form-input ${regErrors[name] ? 'border-red-400' : ''}`} />
       )}
       {regErrors[name] && <p className="text-red-500 text-xs mt-1">⚠ {regErrors[name]}</p>}
