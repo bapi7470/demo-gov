@@ -1,8 +1,28 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { signIn } from 'next-auth/react';
+import { districtsByState } from '../../data/districts';
 
 const STATES_LIST = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu & Kashmir'];
+
+const STATE_KEY_MAP = {
+  'Andhra Pradesh': 'andhra-pradesh', 'Arunachal Pradesh': 'arunachal-pradesh',
+  'Assam': 'assam', 'Bihar': 'bihar', 'Chhattisgarh': 'chhattisgarh',
+  'Goa': 'goa', 'Gujarat': 'gujarat', 'Haryana': 'haryana',
+  'Himachal Pradesh': 'himachal-pradesh', 'Jharkhand': 'jharkhand',
+  'Karnataka': 'karnataka', 'Kerala': 'kerala', 'Madhya Pradesh': 'madhya-pradesh',
+  'Maharashtra': 'maharashtra', 'Manipur': 'manipur', 'Meghalaya': 'meghalaya',
+  'Mizoram': 'mizoram', 'Nagaland': 'nagaland', 'Odisha': 'odisha',
+  'Punjab': 'punjab', 'Rajasthan': 'rajasthan', 'Sikkim': 'sikkim',
+  'Tamil Nadu': 'tamil-nadu', 'Telangana': 'telangana', 'Tripura': 'tripura',
+  'Uttar Pradesh': 'uttar-pradesh', 'Uttarakhand': 'uttarakhand',
+  'West Bengal': 'west-bengal', 'Delhi': 'delhi', 'Jammu & Kashmir': 'jammu-kashmir',
+};
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'));
+const currentYear = 2026;
+const YEARS = Array.from({ length: 80 }, (_, i) => String(currentYear - 5 - i));
 
 const STEPS = ['Personal Info', 'Identity', 'Address & Bank', 'Confirm'];
 
@@ -16,7 +36,7 @@ export default function RegisterPage() {
   const [regErrors, setRegErrors] = useState({});
 
   const [reg, setReg] = useState({
-    fullName: '', dob: '', gender: '', mobile: '', email: '', password: '',
+    fullName: '', dobDay: '', dobMonth: '', dobYear: '', gender: '', mobile: '', email: '', password: '',
     aadhaar: '', pan: '', category: '', education: '',
     address: '', state: '', district: '',
     bankAccount: '', ifsc: '', rationCard: '',
@@ -25,7 +45,7 @@ export default function RegisterPage() {
   const validateStep1 = () => {
     const errs = {};
     if (!reg.fullName) errs.fullName = 'Full name is required';
-    if (!reg.dob) errs.dob = 'Date of birth is required';
+    if (!reg.dobDay || !reg.dobMonth || !reg.dobYear) errs.dob = 'Date of birth is required';
     if (!reg.gender) errs.gender = 'Please select gender';
     if (!reg.mobile || reg.mobile.length !== 10) errs.mobile = 'Enter a valid 10-digit mobile number';
     if (!reg.password || reg.password.length < 6) errs.password = 'Password must be at least 6 characters';
@@ -60,9 +80,11 @@ export default function RegisterPage() {
   const handleRegister = async () => {
     setLoading(true);
     try {
+      const monthIndex = String(MONTHS.indexOf(reg.dobMonth) + 1).padStart(2, '0');
+      const dob = `${reg.dobYear}-${monthIndex}-${reg.dobDay}`;
       const res = await fetch('/api/users/register', {
         method: 'POST',
-        body: JSON.stringify(reg),
+        body: JSON.stringify({ ...reg, dob }),
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
@@ -165,7 +187,30 @@ export default function RegisterPage() {
             {step === 1 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {field('fullName', 'Full Name', 'text', { full: true, placeholder: 'e.g. Rahul Kumar Das' })}
-                {field('dob', 'Date of Birth', 'date')}
+                <div className="sm:col-span-2">
+                  <label className="form-label">Date of Birth <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <select value={reg.dobDay}
+                      onChange={e => { setReg(p => ({ ...p, dobDay: e.target.value })); setRegErrors(p => ({ ...p, dob: '' })); }}
+                      className={`form-input ${regErrors.dob ? 'border-red-400' : ''}`}>
+                      <option value="">Day</option>
+                      {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                    <select value={reg.dobMonth}
+                      onChange={e => { setReg(p => ({ ...p, dobMonth: e.target.value })); setRegErrors(p => ({ ...p, dob: '' })); }}
+                      className={`form-input ${regErrors.dob ? 'border-red-400' : ''}`}>
+                      <option value="">Month</option>
+                      {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <select value={reg.dobYear}
+                      onChange={e => { setReg(p => ({ ...p, dobYear: e.target.value })); setRegErrors(p => ({ ...p, dob: '' })); }}
+                      className={`form-input ${regErrors.dob ? 'border-red-400' : ''}`}>
+                      <option value="">Year</option>
+                      {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  {regErrors.dob && <p className="text-red-500 text-xs mt-1">⚠ {regErrors.dob}</p>}
+                </div>
                 {field('gender', 'Gender', 'select', { options: ['Male', 'Female', 'Transgender'] })}
                 {field('mobile', 'Mobile Number', 'tel', { placeholder: '9XXXXXXXXX' })}
                 {field('email', 'Email Address', 'email', { placeholder: 'example@email.com' })}
@@ -186,8 +231,27 @@ export default function RegisterPage() {
             {step === 3 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {field('address', 'Full Address', 'text', { full: true, placeholder: 'Village/Area, Post Office...' })}
-                {field('state', 'State', 'select', { options: STATES_LIST })}
-                {field('district', 'District', 'text', { placeholder: 'District name' })}
+                <div>
+                  <label className="form-label">State <span className="text-red-500">*</span></label>
+                  <select value={reg.state}
+                    onChange={e => { setReg(p => ({ ...p, state: e.target.value, district: '' })); setRegErrors(p => ({ ...p, state: '' })); }}
+                    className={`form-input ${regErrors.state ? 'border-red-400' : ''}`}>
+                    <option value="">-- Select State --</option>
+                    {STATES_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {regErrors.state && <p className="text-red-500 text-xs mt-1">⚠ {regErrors.state}</p>}
+                </div>
+                <div>
+                  <label className="form-label">District <span className="text-red-500">*</span></label>
+                  <select value={reg.district}
+                    onChange={e => { setReg(p => ({ ...p, district: e.target.value })); setRegErrors(p => ({ ...p, district: '' })); }}
+                    className={`form-input ${regErrors.district ? 'border-red-400' : ''}`}
+                    disabled={!reg.state}>
+                    <option value="">{reg.state ? '-- Select District --' : '-- Select State First --'}</option>
+                    {(districtsByState[STATE_KEY_MAP[reg.state]] || []).map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  {regErrors.district && <p className="text-red-500 text-xs mt-1">⚠ {regErrors.district}</p>}
+                </div>
                 {field('bankAccount', 'Bank Account Number', 'text', { optional: true, placeholder: 'Optional' })}
                 {field('ifsc', 'IFSC Code', 'text', { optional: true, placeholder: 'Optional' })}
               </div>
@@ -199,7 +263,7 @@ export default function RegisterPage() {
                   <h3 className="font-bold text-green-800 mb-3">✅ Please verify your details</h3>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                     {[
-                      ['Full Name', reg.fullName], ['Date of Birth', reg.dob],
+                      ['Full Name', reg.fullName], ['Date of Birth', reg.dobDay && reg.dobMonth && reg.dobYear ? `${reg.dobDay} ${reg.dobMonth} ${reg.dobYear}` : '—'],
                       ['Gender', reg.gender], ['Mobile', reg.mobile],
                       ['Email', reg.email],
                       ['Aadhaar', reg.aadhaar ? reg.aadhaar.slice(0,4) + ' **** ' + reg.aadhaar.slice(-4) : '—'],

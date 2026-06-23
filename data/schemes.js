@@ -160,8 +160,8 @@ export const stateSchemes = {
   "west-bengal": [
     {
       id: "yuva-sathi",
-      name: "Jubo Shakti",
-      nameBengali: "যুব সাথী (যুব শক্তি)",
+      name: "Varsha Bhata",
+      nameBengali: "বার্ষিক ভাতা",
       ministry: "Labour Department, Govt. of West Bengal",
       category: "Youth Employment",
       benefit: "₹3,000/month",
@@ -251,8 +251,8 @@ export const stateSchemes = {
     },
     {
       id: "swasthya-sathi",
-      name: "Swasthya Sathi",
-      nameBengali: "স্বাস্থ্য সাথী",
+      name: "Ayushman Bharat",
+      nameBengali: "আয়ুষ্মান ভারত",
       category: "Health Insurance",
       benefit: "₹5 Lakh health cover/family",
       eligibility: "All WB residents",
